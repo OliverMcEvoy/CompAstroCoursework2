@@ -32,7 +32,7 @@ axs[1].scatter(
 )
 
 # Plot equation of mu against y for comparison.
-mu_range = np.linspace(min(mu_values), max(mu_values), 10000)
+mu_range = np.linspace(min(mu_values), max(mu_values), 100)
 y_equation = (mu_range**3 + 3 * mu_range + 4) / 8
 axs[1].scatter(
     mu_range, y_equation, color="red", s=10, alpha=0.5, marker="^", label="Equation Fit"

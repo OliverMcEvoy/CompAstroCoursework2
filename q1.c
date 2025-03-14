@@ -93,13 +93,15 @@ double *generate_y_to_mu_lookup_array(int32_t length_of_array)
             if (count != 2)
             {
                 printf("ERROR: fscanf matching error line %d\n", i);
-                // Note I could try open the file again in wrtite more but the specific behavior depends on the operating system and that I want to avoid
+                // Note I could try open the file again in write more but the specific behavior depends on the operating system and that I want to avoid.
+                fclose(y_to_mu_lookup_csv);
                 remove("y_to_mu_lookup.csv");
+
                 free(y_to_mu_lookup_array);
                 return generate_y_to_mu_lookup_array(length_of_array);
             }
         }
-
+        fclose(y_to_mu_lookup_csv);
         // If no errors horray! and we can return the lookup array.
         return y_to_mu_lookup_array;
     }
@@ -135,7 +137,7 @@ double get_mu_from_y(double y, const double *lookup_table, int32_t size_of_table
 {
     int32_t low = 0, high = size_of_table - 1;
 
-    // Binary search for the closest y values
+    // Binary search for the closest y values.
     while (low <= high)
     {
         int32_t mid = low + (high - low) / 2;
@@ -180,6 +182,7 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
     }
 
     fclose(efficient_results);
+    free(y_to_mu_lookup_array);
 }
 
 int main()
