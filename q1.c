@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <time.h>
 
+// While I dislike using global varibales it makes sense for pi, I try not to use MP_PI as a refrence for pi as it is not defined in standard C
+double pi = 3.141592653589793;
+
 /**
  * Get a random number within a range
  * @param random_parameters The parameters that are used for the Linear congreguntion function.
@@ -26,6 +29,98 @@ double random_number_with_mapping(int64_t *random_parameters, double lower_bound
     // Map the generated number to the desired range.
     double normalised = (double)(*seed) / (double)(*m);
     return (normalised * (upper_bound - lower_bound)) + lower_bound;
+}
+
+double *generate_lookup_array(int32_t params[3], const char *filename,
+                              double (*compute_value1)(double),
+                              double (*compute_value2)(double))
+{
+    // Extract the parameters from the array
+    int32_t length_of_array = params[0];
+    double initial_value = params[1];
+    double final_value = params[2];
+
+    // Open the file
+    FILE *lookup_file = fopen(filename, "r");
+
+    double increment = (final_value - initial_value) / ((double)length_of_array - 1.0);
+
+    // Determine the number of columns based on whether the second function is provided
+    int columns = (compute_value2 == NULL) ? 2 : 3;
+
+    // Allocate memory for the lookup array (2 or 3 columns of data)
+    double *lookup_array = (double *)malloc(length_of_array * columns * sizeof(double));
+    if (!lookup_array)
+    {
+        fprintf(stderr, "ERROR: Memory allocation failed for %s\n", filename);
+        return NULL;
+    }
+
+    // If file exists, read data from it
+    if (lookup_file != NULL)
+    {
+        for (int32_t i = 0; i < length_of_array; i++)
+        {
+            int count = (columns == 2) ? fscanf(lookup_file, "%lf,%lf", &lookup_array[i * 2], &lookup_array[i * 2 + 1]) : fscanf(lookup_file, "%lf,%lf,%lf", &lookup_array[i * 3], &lookup_array[i * 3 + 1], &lookup_array[i * 3 + 2]);
+            if (count != columns)
+            {
+                printf("ERROR: fscanf matching error in %s on line %d\n", filename, i);
+                fclose(lookup_file);
+                remove(filename);
+                free(lookup_array);
+                return generate_lookup_array(params, filename, compute_value1, compute_value2);
+            }
+        }
+        fclose(lookup_file);
+        printf("Successfully loaded lookup table from %s\n", filename);
+        return lookup_array;
+    }
+
+    // Otherwise, create a new file and generate the lookup table
+    lookup_file = fopen(filename, "w");
+    if (!lookup_file)
+    {
+        fprintf(stderr, "ERROR: Could not create file %s\n", filename);
+        free(lookup_array);
+        return NULL;
+    }
+
+    // First iteration
+    lookup_array[0] = initial_value;
+    lookup_array[1] = compute_value1(lookup_array[0]);
+    if (columns == 3)
+    {
+        lookup_array[2] = compute_value2(lookup_array[0]);
+        fprintf(lookup_file, "%lf,%lf,%lf\n", lookup_array[0], lookup_array[1], lookup_array[2]);
+    }
+    else
+    {
+        fprintf(lookup_file, "%lf,%lf\n", lookup_array[0], lookup_array[1]);
+    }
+
+    printf("Generating lookup table and saving to %s...\n", filename);
+    for (int32_t i = 1; i < length_of_array; i++)
+    {
+        // Generate the next x value
+        lookup_array[i * columns] = lookup_array[(i - 1) * columns] + increment;
+        // Compute the corresponding y value using the first function
+        lookup_array[i * columns + 1] = compute_value1(lookup_array[i * columns]);
+
+        // If a second function is provided, compute the corresponding z value
+        if (columns == 3)
+        {
+            lookup_array[i * columns + 2] = compute_value2(lookup_array[i * columns]);
+            fprintf(lookup_file, "%lf,%lf,%lf\n", lookup_array[i * columns], lookup_array[i * columns + 1], lookup_array[i * columns + 2]);
+        }
+        else
+        {
+            fprintf(lookup_file, "%lf,%lf\n", lookup_array[i * columns], lookup_array[i * columns + 1]);
+        }
+    }
+    printf("Done generating lookup table, saved to %s\n", filename);
+    fclose(lookup_file);
+
+    return lookup_array;
 }
 
 /**
@@ -71,75 +166,9 @@ void rejection_sampling(int32_t num_samples, int64_t *random_parameters, double 
     fclose(rejection_method_results);
 }
 
-/**
- * Function to generate a lookup array to match a random y value to a given mu value
- */
-double *generate_y_to_mu_lookup_array(int32_t length_of_array)
+double calculate_y_from_mu(double y)
 {
-
-    // Open the file
-    FILE *y_to_mu_lookup_csv;
-    y_to_mu_lookup_csv = fopen("y_to_mu_lookup.csv", "r");
-
-    double increment = (double)2 / ((double)length_of_array - 1);
-    // y in the first column and then mu in the second column.
-
-    // double inverse_distribution[number_of_samples][2];
-    double *y_to_mu_lookup_array;
-    y_to_mu_lookup_array = (double *)malloc(length_of_array * 2 * sizeof(double));
-
-    // To save some processing power if the look up table is already created we can just read it in.
-    if (y_to_mu_lookup_csv != NULL)
-    {
-        for (int32_t i = 0; i < length_of_array; i++)
-        {
-            // Elemnent in an array is accessed via row index * total columns + column index you want, it will always be expressed as this to limit ambiguity
-            // int count = fscanf(inverse_distribution_file, "%lf,%lf", inverse_distribution[i * 2 + 0], inverse_distribution[i * 2 + 1]);
-
-            int count = fscanf(y_to_mu_lookup_csv, "%lf,%lf", &y_to_mu_lookup_array[i * 2 + 0], &y_to_mu_lookup_array[i * 2 + 1]);
-            // int count = 2;
-            // I'll delete the file and run it again if theres an issue with the file, TODO: implement something that if this happens more than once an error is raised.
-            if (count != 2)
-            {
-                printf("ERROR: fscanf matching error line %d\n", i);
-                // Note I could try open the file again in write more but the specific behavior depends on the operating system and that I want to avoid.
-                fclose(y_to_mu_lookup_csv);
-                remove("y_to_mu_lookup.csv");
-
-                free(y_to_mu_lookup_array);
-                return generate_y_to_mu_lookup_array(length_of_array);
-            }
-        }
-        fclose(y_to_mu_lookup_csv);
-        // If no errors horray! and we can return the lookup array.
-        return y_to_mu_lookup_array;
-    }
-
-    else
-    {
-        y_to_mu_lookup_csv = fopen("y_to_mu_lookup.csv", "w");
-    }
-
-    // First iteration
-    // Elemnent in an array is accessed via row index * total columns + column index you want, it will always be expressed as this to limit ambiguity
-    y_to_mu_lookup_array[0] = -1;
-    y_to_mu_lookup_array[0 * 2 + 1] = (pow(y_to_mu_lookup_array[0], 3) + 3 * y_to_mu_lookup_array[0] + 4) / (double)8;
-    fprintf(y_to_mu_lookup_csv, "%lf,%lf\n", y_to_mu_lookup_array[0 * 2 + 0], y_to_mu_lookup_array[0 * 2 + 1]);
-
-    printf("generating the inverse distribution...\n");
-    for (int32_t i = 1; i < length_of_array; i++)
-    {
-        // Generate the next mu
-        y_to_mu_lookup_array[i * 2 + 0] = y_to_mu_lookup_array[(i - 1) * 2 + 0] + increment;
-        // Get the corrosponding y value
-        y_to_mu_lookup_array[i * 2 + 1] = (pow(y_to_mu_lookup_array[i * 2 + 0], 3) + 3 * y_to_mu_lookup_array[i * 2 + 0] + 4) / (double)8;
-
-        fprintf(y_to_mu_lookup_csv, "%lf,%lf\n", y_to_mu_lookup_array[i * 2 + 0], y_to_mu_lookup_array[i * 2 + 1]);
-    }
-    printf("done generating the inverse distribution \n");
-    fclose(y_to_mu_lookup_csv);
-
-    return y_to_mu_lookup_array;
+    return (pow(y, 3) + 3 * y + 4) / 8.0;
 }
 
 double get_mu_from_y(double y, const double *lookup_table, int32_t size_of_table)
@@ -169,8 +198,8 @@ double get_mu_from_y(double y, const double *lookup_table, int32_t size_of_table
 void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
 {
 
-    int32_t size_of_table = 2000;
-    double *y_to_mu_lookup_array = generate_y_to_mu_lookup_array(size_of_table);
+    int32_t lookup_table_params[3] = {2000, -1, 1};
+    double *y_to_mu_lookup_array = generate_lookup_array(lookup_table_params, "y_to_mu_lookup.csv", *calculate_y_from_mu, NULL);
 
     double y, mu;
     FILE *efficient_results;
@@ -185,7 +214,7 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
         y = random_number_with_mapping(random_parameters, 0, 1);
 
         // As this is a 1D array, the accessing of the array is simply the row index i
-        mu = get_mu_from_y(y, y_to_mu_lookup_array, size_of_table);
+        mu = get_mu_from_y(y, y_to_mu_lookup_array, lookup_table_params[0]);
 
         fprintf(efficient_results, "%f,%f\n", mu, y);
     }
@@ -194,19 +223,25 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
     free(y_to_mu_lookup_array);
 }
 
-// // This will be similar to geneating the other lookup array, but with enough differnces I feel that having them in seperate functions will harm readablility
-// double *generate_displacement_lookup_array(double pi, int32_t size_of_table){
+double get_u_from_x(double x)
+{
+    double r = 10.0;
+    return (2.0 / pi) * asin(x / r);
+}
 
-// return
-// }
+double get_y_from_X(double x)
+{
+    double r = 10.0;
+    return sqrt(r * r - x * x);
+}
 
 void photon_scattering(int64_t total_photon_count)
 {
     // pi hard coded to the max percision a double provides
-    double pi = 3.141592653589793;
 
-    int32_t size_of_table = 2000;
-    // double *displacement_lookup_array = generate_displacement_lookup_array();
+    // Size of table , start value, final value
+    int32_t lookup_table_params[3] = {2000, -10, 10};
+    double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *get_u_from_x, *get_y_from_X);
 
     // Implement the for loop from the lecture notes.
 }
