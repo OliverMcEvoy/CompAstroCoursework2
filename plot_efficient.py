@@ -16,7 +16,7 @@ axs[0].hist(
 axs[0].set_title("All Results")
 axs[0].set_xlabel("Mu Values")
 axs[0].set_ylabel("Probability Density")
-axs[0].legend()
+axs[0].legend(loc="upper right")
 
 # Plot the actual distribution.
 mu_range = np.linspace(-1, 1, 1000)
@@ -41,7 +41,7 @@ axs[1].scatter(
 axs[1].set_title("Mu vs Y")
 axs[1].set_xlabel("Mu Values")
 axs[1].set_ylabel("Y Values")
-axs[1].legend()
+axs[1].legend(loc="upper right")
 
 plt.tight_layout()
 plt.show()

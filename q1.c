@@ -14,6 +14,7 @@
 double random_number_with_mapping(int64_t *random_parameters, double lower_bound, double upper_bound)
 {
     // Extract values, not neccessary but I think it improves readility.
+    // Note I decided to use a pointer to the seed as if I implement processing over multiple threads, pointers are thread safe while static varibles are typically not
     int64_t *seed = &random_parameters[0];
     int64_t *a = &random_parameters[1];
     int64_t *c = &random_parameters[2];
@@ -45,8 +46,14 @@ double probability_of_mu(double mu)
  * @param a, c, m Parameters for the random number generator.
  * @param to_low, to_high Mapping range for random numbers.
  */
-void rejection_sampling(int32_t num_samples, int64_t *random_parameters, double to_low, double to_high, FILE *rejection_method_results)
+void rejection_sampling(int32_t num_samples, int64_t *random_parameters, double to_low, double to_high)
 {
+    FILE *rejection_method_results;
+    if ((rejection_method_results = fopen("results.csv", "w")) == NULL)
+    {
+        printf("Error opening file!\n");
+    }
+
     for (int32_t i = 0; i < num_samples; i++)
     {
         double mu = random_number_with_mapping(random_parameters, -1, 1);
@@ -60,6 +67,8 @@ void rejection_sampling(int32_t num_samples, int64_t *random_parameters, double 
 
         fprintf(rejection_method_results, "%f,%s\n", mu, acception_threshold < prob_mu ? "accepted" : "rejected");
     }
+
+    fclose(rejection_method_results);
 }
 
 /**
@@ -160,7 +169,7 @@ double get_mu_from_y(double y, const double *lookup_table, int32_t size_of_table
 void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
 {
 
-    int32_t size_of_table = 1000;
+    int32_t size_of_table = 2000;
     double *y_to_mu_lookup_array = generate_y_to_mu_lookup_array(size_of_table);
 
     double y, mu;
@@ -185,22 +194,37 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
     free(y_to_mu_lookup_array);
 }
 
+// // This will be similar to geneating the other lookup array, but with enough differnces I feel that having them in seperate functions will harm readablility
+// double *generate_displacement_lookup_array(double pi, int32_t size_of_table){
+
+// return
+// }
+
+void photon_scattering(int64_t total_photon_count)
+{
+    // pi hard coded to the max percision a double provides
+    double pi = 3.141592653589793;
+
+    int32_t size_of_table = 2000;
+    // double *displacement_lookup_array = generate_displacement_lookup_array();
+
+    // Implement the for loop from the lecture notes.
+}
+
 int main()
 {
+
+    //
+    // As seed, a,c,m will all be used in operations with each other I am declaring them as the same type to ensure type safe code.
     int64_t seed = 1, a = 16807, c = 0, m = 2147483647;
     int64_t rand_parameters[] = {seed, a, c, m};
-    int32_t number_of_samples = 50000;
 
-    FILE *file_ptr;
-    if ((file_ptr = fopen("results.csv", "w")) == NULL)
-    {
-        printf("Error opening file!\n");
-        return 1;
-    }
+    // Questinon 1.
 
+    int32_t number_of_samples = 500000;
     // Measure time for rejection_sampling
     clock_t start_rejection = clock(); // Start timer
-    rejection_sampling(number_of_samples, rand_parameters, 0, 3.14, file_ptr);
+    rejection_sampling(number_of_samples, rand_parameters, 0, 3.14);
     clock_t end_rejection = clock();                                                    // End timer
     double time_rejection = (double)(end_rejection - start_rejection) / CLOCKS_PER_SEC; // Calculate time in seconds
     printf("Time taken for rejection_sampling: %.6f seconds\n", time_rejection);
@@ -222,6 +246,11 @@ int main()
         printf("direct_mapping was faster by %.6f seconds\n", time_rejection - time_direct);
     }
 
-    fclose(file_ptr);
+    // Question 2.
+
+    int64_t total_photon_count = 1000;
+
+    photon_scattering(total_photon_count);
+
     return 0;
 }
