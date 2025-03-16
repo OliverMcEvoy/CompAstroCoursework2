@@ -101,7 +101,7 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
     printf("Generating lookup table and saving to %s...\n", filename);
     for (int32_t i = 1; i < length_of_array; i++)
     {
-        // Generate the next x value
+        // Generate the next z value
         lookup_array[i * columns] = lookup_array[(i - 1) * columns] + increment;
         // Compute the corresponding y value using the first function
         lookup_array[i * columns + 1] = compute_value1(lookup_array[i * columns]);
@@ -223,11 +223,15 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
     free(y_to_mu_lookup_array);
 }
 
-double get_u_from_x(double t)
+double get_z_from_t(double t)
 {
     double r = 10.0;
     if (t < 0)
         t += 10;
+
+    // Edge case where at the end of the circle
+    else if (t = 20)
+        return 10;
 
     else if (t > 0)
         t -= 10;
@@ -235,23 +239,22 @@ double get_u_from_x(double t)
     return r * (2.0 / pi) * asin(t / r);
 }
 
-double get_y_from_X(double t, double x)
+double get_y_from_t_and_z(double t, double z)
 {
     double r = 10.0;
 
     if (t < 0)
-        return sqrt(r * r - x * x);
+        return sqrt(r * r - z * z);
 
     else if (t > 0)
-        return -sqrt(r * r - x * x);
+        return -sqrt(r * r - z * z);
 }
 
-double photon_scattering_lookup(double t, double *lookup_table, int32_t size_of_table)
+void photon_scattering_lookup(double t, double *lookup_table, int32_t size_of_table, double *dz, double *dy)
 {
-
     int32_t low = 0, high = size_of_table - 1;
 
-    // Binary search to get the corrosponding x and y from t.
+    // Binary search
     while (low <= high)
     {
         int32_t mid = low + (high - low) / 2;
@@ -267,19 +270,72 @@ double photon_scattering_lookup(double t, double *lookup_table, int32_t size_of_
         }
     }
 
-    // Return x and y
-    double x = (lookup_table[3 * low + 1] + lookup_table[3 * high + 1]) * 0.5;
-    double y = (lookup_table[3 * low + 2] + lookup_table[3 * high + 2]) * 0.5;
+    // update dz and dy
+    *dz = (lookup_table[3 * low + 1] + lookup_table[3 * high + 1]) * 0.5;
+    *dy = (lookup_table[3 * low + 2] + lookup_table[3 * high + 2]) * 0.5;
 }
 
-void photon_scattering(int64_t total_photon_count)
+void photon_scattering(int64_t total_photon_count, int64_t *random_paramteres)
 {
 
     // Size of table , start value, final value
-    int32_t lookup_table_params[3] = {2000, -20, 20};
-    double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *get_u_from_x, *get_y_from_X);
+    int32_t size_of_table = 25000;
+    int32_t lookup_table_params[3] = {size_of_table, -20, 20};
+    double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *get_z_from_t, *get_y_from_t_and_z);
 
-    // Implement the for loop from the lecture notes.
+    FILE *photon_scattering;
+    if ((photon_scattering = fopen("photon_scattering_results.csv", "w")) == NULL)
+    {
+        printf("Error opening file!\n");
+    }
+
+    for (int64_t i = 0; i < total_photon_count; i++)
+    {
+        // Initial values
+        double y = 0, z = 0, dz = 0, dy = 0;
+
+        int q = 0;
+
+        // loop round until photon escapes
+        while (z >= 0 && z <= 200)
+        {
+            double t = random_number_with_mapping(random_paramteres, -20, 20);
+
+            // pass in the memory address of dz and dy to update them, If I was to generalise to N dimensions a array would be better but this works alright for now
+            photon_scattering_lookup(t, displacement_lookup_array, size_of_table, &dz, &dy);
+
+            z += dz;
+            y += dy;
+            q++;
+        }
+
+        // Check which direction the photon escaped form
+        if (z < 0)
+        {
+            --i;
+        }
+
+        else
+        {
+            // As the material is infinte in the y plane, assume if it didnt escape in z < 0, it escaped in z >0.
+            // Then from this calculate the angle from the origin
+
+            // First, adjustment for overshooting. we want where it crosses z =200
+
+            double overshoot_z = z - 200;
+            // As the ratios will remain same we can find the overshoot y as a ratio releative to the z overshoot
+            double overshoot_y = overshoot_z * dy / dz;
+
+            // Apply the overshoot correction
+            y -= overshoot_y;
+
+            // Find the angle.
+            double theta = atan(fabs(y) / 200);
+
+            fprintf(photon_scattering, "%f,%f,%d\n", y, theta, q);
+        }
+    }
+    fclose(photon_scattering);
 }
 
 int main()
@@ -293,18 +349,18 @@ int main()
     // Questinon 1.
 
     int32_t number_of_samples = 500000;
-    // Measure time for rejection_sampling
-    clock_t start_rejection = clock(); // Start timer
+
+    clock_t start_rejection = clock();
     rejection_sampling(number_of_samples, rand_parameters, 0, 3.14);
-    clock_t end_rejection = clock();                                                    // End timer
-    double time_rejection = (double)(end_rejection - start_rejection) / CLOCKS_PER_SEC; // Calculate time in seconds
+    clock_t end_rejection = clock();
+    double time_rejection = (double)(end_rejection - start_rejection) / CLOCKS_PER_SEC;
+
     printf("Time taken for rejection_sampling: %.6f seconds\n", time_rejection);
 
-    // Measure time for direct_mapping
-    clock_t start_direct = clock(); // Start timer
+    clock_t start_direct = clock();
     direct_mapping(number_of_samples, rand_parameters);
-    clock_t end_direct = clock();                                              // End timer
-    double time_direct = (double)(end_direct - start_direct) / CLOCKS_PER_SEC; // Calculate time in seconds
+    clock_t end_direct = clock();
+    double time_direct = (double)(end_direct - start_direct) / CLOCKS_PER_SEC;
     printf("Time taken for direct_mapping: %.6f seconds\n", time_direct);
 
     // Compare the two methods
@@ -319,9 +375,14 @@ int main()
 
     // Question 2.
 
-    int64_t total_photon_count = 1000;
+    int64_t total_photon_count = 1000000;
 
-    photon_scattering(total_photon_count);
+    clock_t start_photon_scattering = clock();
+    photon_scattering(total_photon_count, rand_parameters);
+    clock_t end_photon_scattering = clock();
+    double time_photon_scattering = (double)(end_photon_scattering - start_photon_scattering) / CLOCKS_PER_SEC;
+
+    printf("Photon scattering completed in %.6f\n", time_photon_scattering);
 
     return 0;
 }
