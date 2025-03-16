@@ -2,8 +2,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Get data.
+# # Get data.
 data = pd.read_csv("efficient_results.csv", names=["mu", "y"])
+# data = pd.read_csv("displacement_direction_lookup.csv", names=["x", "mu", "y"])
+
 mu_values = data["mu"]
 y_values = data["y"]
 
@@ -34,9 +36,9 @@ axs[1].scatter(
 # Plot equation of mu against y for comparison.
 mu_range = np.linspace(min(mu_values), max(mu_values), 100)
 y_equation = (mu_range**3 + 3 * mu_range + 4) / 8
-axs[1].scatter(
-    mu_range, y_equation, color="red", s=10, alpha=0.5, marker="^", label="Equation Fit"
-)
+# axs[1].scatter(
+#     mu_range, y_equation, color="red", s=10, alpha=0.5, marker="^", label="Equation Fit"
+# )
 
 axs[1].set_title("Mu vs Y")
 axs[1].set_xlabel("Mu Values")

@@ -33,7 +33,7 @@ double random_number_with_mapping(int64_t *random_parameters, double lower_bound
 
 double *generate_lookup_array(int32_t params[3], const char *filename,
                               double (*compute_value1)(double),
-                              double (*compute_value2)(double))
+                              double (*compute_value2)(double, double))
 {
     // Extract the parameters from the array
     int32_t length_of_array = params[0];
@@ -90,7 +90,7 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
     lookup_array[1] = compute_value1(lookup_array[0]);
     if (columns == 3)
     {
-        lookup_array[2] = compute_value2(lookup_array[0]);
+        lookup_array[2] = compute_value2(lookup_array[0], lookup_array[1]);
         fprintf(lookup_file, "%lf,%lf,%lf\n", lookup_array[0], lookup_array[1], lookup_array[2]);
     }
     else
@@ -109,7 +109,7 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         // If a second function is provided, compute the corresponding z value
         if (columns == 3)
         {
-            lookup_array[i * columns + 2] = compute_value2(lookup_array[i * columns]);
+            lookup_array[i * columns + 2] = compute_value2(lookup_array[i * columns], lookup_array[i * columns + 1]);
             fprintf(lookup_file, "%lf,%lf,%lf\n", lookup_array[i * columns], lookup_array[i * columns + 1], lookup_array[i * columns + 2]);
         }
         else
@@ -223,24 +223,60 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
     free(y_to_mu_lookup_array);
 }
 
-double get_u_from_x(double x)
+double get_u_from_x(double t)
 {
     double r = 10.0;
-    return (2.0 / pi) * asin(x / r);
+    if (t < 0)
+        t += 10;
+
+    else if (t > 0)
+        t -= 10;
+
+    return r * (2.0 / pi) * asin(t / r);
 }
 
-double get_y_from_X(double x)
+double get_y_from_X(double t, double x)
 {
     double r = 10.0;
-    return sqrt(r * r - x * x);
+
+    if (t < 0)
+        return sqrt(r * r - x * x);
+
+    else if (t > 0)
+        return -sqrt(r * r - x * x);
+}
+
+double photon_scattering_lookup(double t, double *lookup_table, int32_t size_of_table)
+{
+
+    int32_t low = 0, high = size_of_table - 1;
+
+    // Binary search to get the corrosponding x and y from t.
+    while (low <= high)
+    {
+        int32_t mid = low + (high - low) / 2;
+        double mid_t = lookup_table[3 * mid];
+
+        if (mid_t < t)
+        {
+            low = mid + 1;
+        }
+        else
+        {
+            high = mid - 1;
+        }
+    }
+
+    // Return x and y
+    double x = (lookup_table[3 * low + 1] + lookup_table[3 * high + 1]) * 0.5;
+    double y = (lookup_table[3 * low + 2] + lookup_table[3 * high + 2]) * 0.5;
 }
 
 void photon_scattering(int64_t total_photon_count)
 {
-    // pi hard coded to the max percision a double provides
 
     // Size of table , start value, final value
-    int32_t lookup_table_params[3] = {2000, -10, 10};
+    int32_t lookup_table_params[3] = {2000, -20, 20};
     double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *get_u_from_x, *get_y_from_X);
 
     // Implement the for loop from the lecture notes.
