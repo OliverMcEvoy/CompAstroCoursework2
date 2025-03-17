@@ -230,7 +230,7 @@ double get_z_from_t(double t)
         t += 10;
 
     // Edge case where at the end of the circle
-    else if (t = 20)
+    else if (t == 20)
         return 10;
 
     else if (t > 0)
@@ -275,18 +275,49 @@ void photon_scattering_lookup(double t, double *lookup_table, int32_t size_of_ta
     *dy = (lookup_table[3 * low + 2] + lookup_table[3 * high + 2]) * 0.5;
 }
 
-void photon_scattering(int64_t total_photon_count, int64_t *random_paramteres)
+// Function to find bin index based on theta
+int32_t find_bin_index(double theta, double *bin_edges, int32_t number_of_bins)
+{
+    for (int i = 0; i < number_of_bins; i++)
+    {
+        if (theta >= bin_edges[i] && theta < bin_edges[i + 1])
+        {
+            return i;
+        }
+    }
+}
+
+void photon_scattering(int64_t total_photon_count, int64_t *random_parameters)
 {
 
     // Size of table , start value, final value
-    int32_t size_of_table = 25000;
+    int32_t size_of_table = 25000, number_of_bins = 10;
     int32_t lookup_table_params[3] = {size_of_table, -20, 20};
+
+    double escape_z = 200;
     double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *get_z_from_t, *get_y_from_t_and_z);
 
-    FILE *photon_scattering;
-    if ((photon_scattering = fopen("photon_scattering_results.csv", "w")) == NULL)
+    FILE *photon_scattering, *binned_intensity;
+    if ((photon_scattering = fopen("photon_scattering_results.csv", "w")) == NULL ||
+        (binned_intensity = fopen("binned_intensity.csv", "w")) == NULL)
     {
         printf("Error opening file!\n");
+        return;
+    }
+
+    double bin_counts[number_of_bins], bin_midpoints[number_of_bins], bin_intensity[number_of_bins], bin_edges[number_of_bins + 1];
+
+    // Get the range of bin edges from - pi/2 to pi/2
+    for (int i = 0; i <= number_of_bins; i++)
+    {
+        bin_edges[i] = (-pi / 2.0) + pi * i / number_of_bins;
+    }
+
+    // Get the bin midpoints
+    for (int i = 0; i < number_of_bins; i++)
+    {
+        double theta_mid = (bin_edges[i] + bin_edges[i + 1]) / 2.0;
+        bin_midpoints[i] = cos(theta_mid);
     }
 
     for (int64_t i = 0; i < total_photon_count; i++)
@@ -297,9 +328,9 @@ void photon_scattering(int64_t total_photon_count, int64_t *random_paramteres)
         int q = 0;
 
         // loop round until photon escapes
-        while (z >= 0 && z <= 200)
+        while (z >= 0 && z <= escape_z)
         {
-            double t = random_number_with_mapping(random_paramteres, -20, 20);
+            double t = random_number_with_mapping(random_parameters, -20, 20);
 
             // pass in the memory address of dz and dy to update them, If I was to generalise to N dimensions a array would be better but this works alright for now
             photon_scattering_lookup(t, displacement_lookup_array, size_of_table, &dz, &dy);
@@ -309,33 +340,48 @@ void photon_scattering(int64_t total_photon_count, int64_t *random_paramteres)
             q++;
         }
 
-        // Check which direction the photon escaped form
+        // Check which direction the photon escaped from
         if (z < 0)
         {
             --i;
         }
-
         else
         {
-            // As the material is infinte in the y plane, assume if it didnt escape in z < 0, it escaped in z >0.
+            // As the material is infinite in the y plane, assume if it didn't escape in z < 0, it escaped in z > 0.
             // Then from this calculate the angle from the origin
 
-            // First, adjustment for overshooting. we want where it crosses z =200
+            // First, adjustment for overshooting. we want where it crosses z = 200
 
-            double overshoot_z = z - 200;
-            // As the ratios will remain same we can find the overshoot y as a ratio releative to the z overshoot
+            double overshoot_z = z - escape_z;
+            // As the ratios will remain the same we can find the overshoot y as a ratio relative to the z overshoot
             double overshoot_y = overshoot_z * dy / dz;
 
             // Apply the overshoot correction
             y -= overshoot_y;
 
             // Find the angle.
-            double theta = atan(fabs(y) / 200);
+            double theta = atan(y / escape_z);
+            double intensity = cos(theta);
 
-            fprintf(photon_scattering, "%f,%f,%d\n", y, theta, q);
+            fprintf(photon_scattering, "%f,%f,%d\n", y, intensity, q);
+
+            int32_t bin_index = find_bin_index(theta, bin_edges, number_of_bins);
+
+            bin_counts[bin_index]++;
         }
     }
     fclose(photon_scattering);
+
+    printf("got here\n");
+
+    for (int32_t i = 0; i < number_of_bins; i++)
+    {
+
+        bin_intensity[i] = (double)bin_counts[i] * fabs(bin_midpoints[i]) / (double)total_photon_count;
+        fprintf(binned_intensity, "%lf,%lf,%lf,%lf\n", bin_midpoints[i], bin_intensity[i], bin_edges[i], bin_edges[i + 1]);
+    }
+
+    fclose(binned_intensity);
 }
 
 int main()
