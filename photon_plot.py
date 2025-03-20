@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 
 # Load data
 df = pd.read_csv("photon_scattering_results.csv", names=["y", "theta", "iterations"])
+# df = pd.read_csv("rayleigh_scattering_results.csv", names=["y", "theta", "iterations"])
 
 # Set up the figure
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))

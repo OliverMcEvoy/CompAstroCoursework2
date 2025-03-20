@@ -2,9 +2,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Load the CSV file
+# # Load the CSV file
 data = pd.read_csv(
     "binned_intensity.csv",
+    header=None,
+    names=["mu", "intensity", "bin_edge_lower", "bin_edge_upper"],
+)
+
+data = pd.read_csv(
+    "rayleigh_binned_intensity.csv",
     header=None,
     names=["mu", "intensity", "bin_edge_lower", "bin_edge_upper"],
 )
@@ -15,6 +21,10 @@ intensity = data["intensity"]
 bin_edge_lower = data["bin_edge_lower"]
 bin_edge_upper = data["bin_edge_upper"]
 
+for i in range(len(mu)):
+    if i >= 5:
+        mu[i] = 2 - mu[i]
+
 # Plot settings
 fig, axes = plt.subplots(1, 1, figsize=(10, 6))  # Set figure size
 
@@ -23,6 +33,14 @@ axes.scatter(mu, intensity, marker="o", color="red", label="Intensity")
 
 # Shade the regions of each bin
 for i in range(len(bin_edge_lower)):
+    if i >= 5:
+        axes.axvspan(
+            2 - np.cos(bin_edge_lower[i]),
+            2 - np.cos(bin_edge_upper[i]),
+            color="gray",
+            alpha=0.2,
+            label=f"Bin {i + 1}" if i == 0 else "",
+        )
     axes.axvspan(
         np.cos(bin_edge_lower[i]),
         np.cos(bin_edge_upper[i]),
@@ -30,6 +48,7 @@ for i in range(len(bin_edge_lower)):
         alpha=0.2,
         label=f"Bin {i + 1}" if i == 0 else "",
     )
+
 
 # Add labels and title
 axes.set_xlabel(r"$\mu = \cos\theta$", fontsize=14)

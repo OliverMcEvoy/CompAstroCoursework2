@@ -171,7 +171,7 @@ double calculate_y_from_mu(double y)
     return (pow(y, 3) + 3 * y + 4) / 8.0;
 }
 
-double get_mu_from_y(double y, const double *lookup_table, int32_t size_of_table)
+double binary_search_2_columns(double y, const double *lookup_table, int32_t size_of_table)
 {
     int32_t low = 0, high = size_of_table - 1;
 
@@ -214,7 +214,7 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
         y = random_number_with_mapping(random_parameters, 0, 1);
 
         // As this is a 1D array, the accessing of the array is simply the row index i
-        mu = get_mu_from_y(y, y_to_mu_lookup_array, lookup_table_params[0]);
+        mu = binary_search_2_columns(y, y_to_mu_lookup_array, lookup_table_params[0]);
 
         fprintf(efficient_results, "%f,%f\n", mu, y);
     }
@@ -223,34 +223,38 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
     free(y_to_mu_lookup_array);
 }
 
-double get_z_from_t(double t)
+double get_z_from_u(double u)
 {
-    double r = 10.0;
-    if (t < 0)
-        t += 10;
+    // In theory if the distance travelled
+    double r = 1.0;
+    if (u < 0)
+        u += 1;
 
-    // Edge case where at the end of the circle
-    else if (t == 20)
-        return 10;
+    // Edge case where at the end of the circle ( 1.9999 as floating points)
+    else if (u > 1.999999)
+        return 1;
 
-    else if (t > 0)
-        t -= 10;
+    else if (u > 0)
+        u -= 1;
 
-    return r * (2.0 / pi) * asin(t / r);
+    return r * (2.0 / pi) * asin(u / r);
 }
 
-double get_y_from_t_and_z(double t, double z)
+double get_y_from_u_and_z(double u, double z)
 {
-    double r = 10.0;
+    double r = 1.0;
 
-    if (t < 0)
+    if (u < 0)
         return sqrt(r * r - z * z);
 
-    else if (t > 0)
+    else if (u > 0)
         return -sqrt(r * r - z * z);
 }
 
-void photon_scattering_lookup(double t, double *lookup_table, int32_t size_of_table, double *dz, double *dy)
+// While it is possible to merge the lookups into one, I ran into an issue where in C only a single value is returned.
+// I think this function is distinct enough to warrent its existance. but I think the functionality of binary_search_2_columns could be rewrote to use pointers Or maybe a more general lookup taking X pointers in or something
+// TODO: See comment above? maybe, not sure if its the most important thing in the world, and there is other piorities first.
+void binary_search_3_columns(double u, double *lookup_table, int32_t size_of_table, double *dz, double *dy)
 {
     int32_t low = 0, high = size_of_table - 1;
 
@@ -258,9 +262,9 @@ void photon_scattering_lookup(double t, double *lookup_table, int32_t size_of_ta
     while (low <= high)
     {
         int32_t mid = low + (high - low) / 2;
-        double mid_t = lookup_table[3 * mid];
+        double mid_u = lookup_table[3 * mid];
 
-        if (mid_t < t)
+        if (mid_u < u)
         {
             low = mid + 1;
         }
@@ -278,7 +282,7 @@ void photon_scattering_lookup(double t, double *lookup_table, int32_t size_of_ta
 // Function to find bin index based on theta
 int32_t find_bin_index(double theta, double *bin_edges, int32_t number_of_bins)
 {
-    for (int i = 0; i < number_of_bins; i++)
+    for (int32_t i = 0; i < number_of_bins; i++)
     {
         if (theta >= bin_edges[i] && theta < bin_edges[i + 1])
         {
@@ -287,57 +291,109 @@ int32_t find_bin_index(double theta, double *bin_edges, int32_t number_of_bins)
     }
 }
 
-void photon_scattering(int64_t total_photon_count, int64_t *random_parameters)
+double calculate_b_from_theta(double theta)
 {
-
-    // Size of table , start value, final value
-    int32_t size_of_table = 25000, number_of_bins = 10;
-    int32_t lookup_table_params[3] = {size_of_table, -20, 20};
+    // 2 theta * 1/2pi sin(4 pi theta). I dislike doing division in C, but this generation of the lookup table is not a bottle neck one bit so ah well.
+    // Also its an odd function so it functions as intended whenever theta < 0
+    return 2 * theta + (double)(1 / (2 * pi)) * sin(4 * pi * theta);
+}
+void photon_scattering(int64_t total_photon_count, int64_t *random_parameters, int do_rayleigh_scattering, double mean_free_path, const char *results_file_name, const char *binned_file_name)
+{
+    // Size of table, start value, final value
+    int32_t size_of_table = 5000, number_of_bins = 10;
+    int32_t lookup_table_params[3] = {size_of_table, -2, 2};
 
     double escape_z = 200;
-    double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *get_z_from_t, *get_y_from_t_and_z);
+    double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *get_z_from_u, *get_y_from_u_and_z);
 
-    FILE *photon_scattering, *binned_intensity;
-    if ((photon_scattering = fopen("photon_scattering_results.csv", "w")) == NULL ||
-        (binned_intensity = fopen("binned_intensity.csv", "w")) == NULL)
+    FILE *photon_scattering_results, *binned_intensity;
+    if ((photon_scattering_results = fopen(results_file_name, "w")) == NULL ||
+        (binned_intensity = fopen(binned_file_name, "w")) == NULL)
     {
         printf("Error opening file!\n");
         return;
     }
 
-    double bin_counts[number_of_bins], bin_midpoints[number_of_bins], bin_intensity[number_of_bins], bin_edges[number_of_bins + 1];
+    // I should only do this if rayliegh scattering, ah well.
+    int32_t size_of_scattering_table = 2000;
+    int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -2, 2};
+    double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "scattering_angle_lookup.csv", *calculate_b_from_theta, NULL);
 
-    // Get the range of bin edges from - pi/2 to pi/2
-    for (int i = 0; i <= number_of_bins; i++)
+    int32_t bin_counts[number_of_bins];
+    double bin_midpoints[number_of_bins], bin_intensity[number_of_bins], bin_edges[number_of_bins + 1];
+
+    // Set up the bins and their mid points
+    for (int32_t i = 0; i <= number_of_bins; i++)
     {
         bin_edges[i] = (-pi / 2.0) + pi * i / number_of_bins;
     }
 
-    // Get the bin midpoints
-    for (int i = 0; i < number_of_bins; i++)
+    for (int32_t i = 0; i < number_of_bins; i++)
     {
         double theta_mid = (bin_edges[i] + bin_edges[i + 1]) / 2.0;
         bin_midpoints[i] = cos(theta_mid);
     }
 
-    for (int64_t i = 0; i < total_photon_count; i++)
+    // There has to be a better way to do this, I do not like this but it fixes a bug.
+    for (int32_t i = 0; i < number_of_bins; i++)
+    {
+        bin_counts[i] = 0;
+    }
+
+    for (int32_t i = 0; i < total_photon_count; i++)
     {
         // Initial values
-        double y = 0, z = 0, dz = 0, dy = 0;
+        double y = 0, z = 0, dz = 0, dy = 0, t = 0, sum_t = 0, theta = 0, u = 0;
 
         int q = 0;
 
-        // loop round until photon escapes
+        // Start it towards the z direction if Rayleigh scattering
+        if (do_rayleigh_scattering)
+        {
+            z += -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
+            u += 2;
+        }
+
+        // Loop until photon escapes
         while (z >= 0 && z <= escape_z)
         {
-            double t = random_number_with_mapping(random_parameters, -20, 20);
 
-            // pass in the memory address of dz and dy to update them, If I was to generalise to N dimensions a array would be better but this works alright for now
-            photon_scattering_lookup(t, displacement_lookup_array, size_of_table, &dz, &dy);
+            // Getting a bit too indented for my liking but it will have to do.
+            if (do_rayleigh_scattering)
+            {
+                // Adjust theta by a probabilistic amount
+                double b = random_number_with_mapping(random_parameters, -4, 4);
+                theta = binary_search_2_columns(b, scattering_lookup_array, size_of_scattering_table);
+                u += theta;
 
-            z += dz;
-            y += dy;
+                // Check for a complete rotation
+                if (u > 2)
+                    u -= 4;
+                if (u < -2)
+                    u += 4;
+            }
+            else
+            {
+                u = random_number_with_mapping(random_parameters, -2, 2);
+            }
+
+            // Pass in the memory address of dz and dy to update them, If I was to generalise to N dimensions a array would be better but this works alright for now
+            binary_search_3_columns(u, displacement_lookup_array, size_of_table, &dz, &dy);
+
+            // Calculate the distance travelled using a direct map. TODO: another lookup table for this one?
+            t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
+
+            sum_t += t;
+            z += dz * t;
+            y += dy * t;
             q++;
+        }
+
+        // Compute and print average t
+        if (q > 0)
+        {
+            double avg_t = sum_t / (double)q;
+            // printf("Average t: %f\n", avg_t);
         }
 
         // Check which direction the photon escaped from
@@ -351,7 +407,6 @@ void photon_scattering(int64_t total_photon_count, int64_t *random_parameters)
             // Then from this calculate the angle from the origin
 
             // First, adjustment for overshooting. we want where it crosses z = 200
-
             double overshoot_z = z - escape_z;
             // As the ratios will remain the same we can find the overshoot y as a ratio relative to the z overshoot
             double overshoot_y = overshoot_z * dy / dz;
@@ -360,27 +415,23 @@ void photon_scattering(int64_t total_photon_count, int64_t *random_parameters)
             y -= overshoot_y;
 
             // Find the angle.
-            double theta = atan(y / escape_z);
-            double intensity = cos(theta);
+            double theta_lab = atan(y / escape_z);
+            double intensity = cos(theta_lab);
 
-            fprintf(photon_scattering, "%f,%f,%d\n", y, intensity, q);
+            fprintf(photon_scattering_results, "%f,%f,%d\n", y, intensity, q);
 
-            int32_t bin_index = find_bin_index(theta, bin_edges, number_of_bins);
-
+            int32_t bin_index = find_bin_index(theta_lab, bin_edges, number_of_bins);
             bin_counts[bin_index]++;
         }
     }
-    fclose(photon_scattering);
+    fclose(photon_scattering_results);
 
-    printf("got here\n");
-
+    // Write binned intensity results
     for (int32_t i = 0; i < number_of_bins; i++)
     {
-
         bin_intensity[i] = (double)bin_counts[i] * fabs(bin_midpoints[i]) / (double)total_photon_count;
         fprintf(binned_intensity, "%lf,%lf,%lf,%lf\n", bin_midpoints[i], bin_intensity[i], bin_edges[i], bin_edges[i + 1]);
     }
-
     fclose(binned_intensity);
 }
 
@@ -421,14 +472,19 @@ int main()
 
     // Question 2.
 
-    int64_t total_photon_count = 1000000;
+    int64_t total_photon_count = 100000;
 
     clock_t start_photon_scattering = clock();
-    photon_scattering(total_photon_count, rand_parameters);
+    photon_scattering(total_photon_count, rand_parameters, 0, 10, "photon.csv", "photon_bins.csv");
     clock_t end_photon_scattering = clock();
     double time_photon_scattering = (double)(end_photon_scattering - start_photon_scattering) / CLOCKS_PER_SEC;
 
     printf("Photon scattering completed in %.6f\n", time_photon_scattering);
+
+    // Question 3
+
+    photon_scattering(total_photon_count, rand_parameters, 1, 10, "rayleigh_blue.csv", "rayleigh_blue_bins.csv");
+    photon_scattering(total_photon_count, rand_parameters, 1, 0.1, "rayleigh_other.csv", "rayleigh_other_bins.csv");
 
     return 0;
 }
