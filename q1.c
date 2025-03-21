@@ -42,7 +42,8 @@ double random_number_with_mapping(int64_t *random_parameters, double lower_bound
  */
 double *generate_lookup_array(int32_t params[3], const char *filename,
                               double (*compute_value1)(double),
-                              double (*compute_value2)(double, double))
+                              double (*compute_value2)(double, double),
+                              double (*compute_value3)(double, double))
 {
     // Extract the parameters from the array
     int32_t length_of_array = params[0];
@@ -54,8 +55,8 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
 
     double increment = (final_value - initial_value) / ((double)length_of_array - 1.0);
 
-    // Determine the number of columns based on whether the second function is provided
-    int columns = (compute_value2 == NULL) ? 2 : 3;
+    // Determine the number of columns based on whether the second function is provided. could add a use case if a 2nd is provided and a 3rd is not, but not needed atm
+    int32_t columns = (compute_value2 == NULL) ? 2 : 4;
 
     double *lookup_array = (double *)malloc(length_of_array * columns * sizeof(double));
 
@@ -66,18 +67,20 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         {
             // Read the csv diffiently depending on the amount of columns
             int count = (columns == 2) ? fscanf(lookup_file, "%lf,%lf",
-                                                &lookup_array[i * 2],
-                                                &lookup_array[i * 2 + 1])
-                                       : fscanf(lookup_file, "%lf,%lf,%lf",
-                                                &lookup_array[i * 3],
-                                                &lookup_array[i * 3 + 1], &lookup_array[i * 3 + 2]);
+                                                &lookup_array[i * columns],
+                                                &lookup_array[i * columns + 1])
+                                       : fscanf(lookup_file, "%lf,%lf,%lf,%lf",
+                                                &lookup_array[i * columns],
+                                                &lookup_array[i * columns + 1],
+                                                &lookup_array[i * columns + 2],
+                                                &lookup_array[i * columns + 3]);
             if (count != columns)
             {
                 printf("ERROR: fscanf matching error in %s on line %d\n", filename, i);
                 fclose(lookup_file);
                 remove(filename);
                 free(lookup_array);
-                return generate_lookup_array(params, filename, compute_value1, compute_value2);
+                return generate_lookup_array(params, filename, compute_value1, compute_value2, compute_value3);
             }
         }
         fclose(lookup_file);
@@ -91,10 +94,11 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
     // First iteration handle seperately, due to initial value tomfoolery.
     lookup_array[0] = initial_value;
     lookup_array[1] = compute_value1(lookup_array[0]);
-    if (columns == 3)
+    if (columns == 4)
     {
         lookup_array[2] = compute_value2(lookup_array[0], lookup_array[1]);
-        fprintf(lookup_file, "%lf,%lf,%lf\n", lookup_array[0], lookup_array[1], lookup_array[2]);
+        lookup_array[3] = compute_value3(lookup_array[0], lookup_array[1]);
+        fprintf(lookup_file, "%lf,%lf,%lf,%lf\n", lookup_array[0], lookup_array[1], lookup_array[2], lookup_array[3]);
     }
     else
     {
@@ -110,10 +114,11 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         lookup_array[i * columns + 1] = compute_value1(lookup_array[i * columns]);
 
         // If a second function is provided, compute the corresponding value in the third column
-        if (columns == 3)
+        if (columns == 4)
         {
             lookup_array[i * columns + 2] = compute_value2(lookup_array[i * columns], lookup_array[i * columns + 1]);
-            fprintf(lookup_file, "%lf,%lf,%lf\n", lookup_array[i * columns], lookup_array[i * columns + 1], lookup_array[i * columns + 2]);
+            lookup_array[i * columns + 3] = compute_value3(lookup_array[i * columns], lookup_array[i * columns + 1]);
+            fprintf(lookup_file, "%lf,%lf,%lf,%lf\n", lookup_array[i * columns], lookup_array[i * columns + 1], lookup_array[i * columns + 2], lookup_array[i * columns + 3]);
         }
         else
         {
@@ -151,29 +156,24 @@ void binary_search_2_columns(double y, const double *lookup_table, int32_t size_
 }
 // I think this function is distinct enough to warrent its existance. but I think the functionality of binary_search_2_columns could be rewrote to maybe be a more general lookup taking X pointers in or something
 // TODO: See comment above? maybe, not sure if its the most important thing in the world, and there is other piorities first.
-void binary_search_3_columns(double u, double *lookup_table, int32_t size_of_table, double *dz, double *dy)
+void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_table, double *dz, double *dy, double *dx)
 {
     int32_t low = 0, high = size_of_table;
-
-    // Binary search. more or less halfs the size of the table until it finds where the value was. Seems to be the most efficent search for this anyways
     while (low <= high)
     {
         int32_t mid = low + (high - low) / 2;
-        double mid_u = lookup_table[3 * mid];
+        double mid_u = lookup_table[4 * mid];
 
         if (mid_u < u)
-        {
             low = mid + 1;
-        }
         else
-        {
             high = mid - 1;
-        }
     }
 
-    // Update dz and dy using their memory address.
-    *dz = (lookup_table[3 * low + 1] + lookup_table[3 * high + 1]) * 0.5;
-    *dy = (lookup_table[3 * low + 2] + lookup_table[3 * high + 2]) * 0.5;
+    // update the memory addresses directly
+    *dz = (lookup_table[4 * low + 1] + lookup_table[4 * high + 1]) * 0.5;
+    *dy = (lookup_table[4 * low + 2] + lookup_table[4 * high + 2]) * 0.5;
+    *dx = (lookup_table[4 * low + 3] + lookup_table[4 * high + 3]) * 0.5;
 }
 /**
  * Function to calculate the probability of mu according to the given formula.
@@ -229,14 +229,11 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
 {
 
     int32_t lookup_table_params[3] = {2000, -1, 1};
-    double *y_to_mu_lookup_array = generate_lookup_array(lookup_table_params, "y_to_mu_lookup.csv", *calculate_y_from_mu, NULL);
+    double *y_to_mu_lookup_array = generate_lookup_array(lookup_table_params, "y_to_mu_lookup.csv", *calculate_y_from_mu, NULL, NULL);
 
     double y, mu;
     FILE *efficient_results;
-    if ((efficient_results = fopen("efficient_results.csv", "w")) == NULL)
-    {
-        printf("Error opening file!\n");
-    }
+    efficient_results = fopen("efficient_results.csv", "w");
 
     for (int32_t i = 0; i < number_of_samples; i++)
     {
@@ -280,6 +277,12 @@ double calculate_y_from_u_and_z(double u, double z)
     else if (u > 0)
         return -sqrt(r * r - z * z);
 }
+double calculate_x_from_u_and_z(double u, double z)
+{
+    double r = sqrt(1 - (z * z)); // Ensuring the displacement keeps to a unit sphere
+    double phi = 20 * pi * u;     // ensure a frequency loop around the values of a sphere
+    return r * cos(phi);
+}
 
 // Function to find bin index based on theta
 int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of_bins)
@@ -295,7 +298,7 @@ int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of
 // See report for derivation.
 double calculate_b_from_theta(double theta)
 {
-    // 2 theta * 1/2pi sin(4 pi theta). I dislike doing division in C, but this generation of the lookup table is not a bottle neck one bit so ah well.
+    // 2 theta * 1/2pi sin(4 pi theta). I dislike doing division in C, but the generation of the lookup table is not a bottle neck one bit so ah well.
     // Also its an odd function so it functions as intended whenever theta < 0
     return 2 * theta + (double)(1 / (2 * pi)) * sin(4 * pi * theta);
 }
@@ -321,11 +324,11 @@ void photon_scattering(int64_t total_photon_count,
                        const char *binned_file_name)
 {
     // Size of table, start value, final value
-    int32_t size_of_displacement_table = 5000, number_of_bins = 10;
+    int32_t size_of_displacement_table = 50000, number_of_bins = 10;
     int32_t lookup_table_params[3] = {size_of_displacement_table, -2, 2};
 
     double escape_z = 200;
-    double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *calculate_z_from_u, *calculate_y_from_u_and_z);
+    double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *calculate_z_from_u, *calculate_y_from_u_and_z, *calculate_x_from_u_and_z);
 
     FILE *photon_scattering_results, *binned_intensity;
     if ((photon_scattering_results = fopen(results_file_name, "w")) == NULL ||
@@ -336,9 +339,9 @@ void photon_scattering(int64_t total_photon_count,
     }
 
     // I should only do this if rayliegh scattering, ah well.
-    int32_t size_of_scattering_table = 2000;
-    int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -2, 2};
-    double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "scattering_angle_lookup.csv", *calculate_b_from_theta, NULL);
+    int32_t size_of_scattering_table = 25000;
+    int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -4, 4};
+    double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "scattering_angle_lookup.csv", *calculate_b_from_theta, NULL, NULL);
 
     int32_t bin_counts[number_of_bins];
     double bin_midpoints[number_of_bins], bin_intensity[number_of_bins], bin_edges[number_of_bins + 1];
@@ -346,7 +349,7 @@ void photon_scattering(int64_t total_photon_count,
     // Set up the bins and their mid points
     for (int32_t i = 0; i <= number_of_bins; i++)
     {
-        bin_edges[i] = (-pi / 2.0) + pi * i / number_of_bins;
+        bin_edges[i] = pi * i / (2 * number_of_bins);
     }
 
     for (int32_t i = 0; i < number_of_bins; i++)
@@ -364,7 +367,7 @@ void photon_scattering(int64_t total_photon_count,
     for (int32_t i = 0; i < total_photon_count; i++)
     {
         // Initial values
-        double y = 0, z = 0, dz = 0, dy = 0, t = 0, sum_t = 0, theta = 0, u = 0;
+        double y = 0, z = 0, x = 0, dz = 0, dy = 0, dx = 0, t = 0, sum_t = 0, theta = 0, u = 0;
 
         int q = 0;
 
@@ -400,17 +403,18 @@ void photon_scattering(int64_t total_photon_count,
             }
 
             // Pass in the memory address of dz and dy to update them
-            binary_search_3_columns(u, displacement_lookup_array, size_of_displacement_table, &dz, &dy);
+            binary_search_4_columns(u, displacement_lookup_array, size_of_displacement_table, &dz, &dy, &dx);
 
             // Calculate the distance travelled using a direct map
             t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
 
-            if (!photon_scatters(0.1, random_parameters))
+            if (!photon_scatters(absorption_probablity, random_parameters))
                 continue;
 
             sum_t += t;
             z += dz * t;
             y += dy * t;
+            x += dx * t;
             q++;
         }
 
@@ -446,7 +450,7 @@ void photon_scattering(int64_t total_photon_count,
 // Just to make sure threads dont try write at the same time. It slows things down but I can only be so agressive in my thread saftey
 #pragma omp critical
         {
-            fprintf(photon_scattering_results, "%f,%f,%d\n", y, intensity, q);
+            fprintf(photon_scattering_results, "%lf,%lf,%lf,%d\n", y, x, intensity, q);
 
             int32_t bin_index = find_bin_index(theta_lab, bin_edges, number_of_bins);
             bin_counts[bin_index]++;
@@ -477,7 +481,7 @@ void photon_scattering(int64_t total_photon_count,
 
 int main()
 {
-    int64_t seed = 30, a = 16807, c = 0, m = 2147483647;
+    int64_t seed = 1, a = 16807, c = 0, m = 2147483647;
     int64_t rand_parameters[] = {seed, a, c, m};
 
     // Question 1
@@ -494,14 +498,15 @@ int main()
         printf("direct_mapping was faster by %.6f seconds\n", time_rejection - time_direct);
     }
 
-    int32_t total_photon_count = 1000;
+    int32_t total_photon_count = 1000000;
+
     // Question 2
-    double time_photon_scattering = MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 0, 10, 0, "photon.csv", "photon_bins.csv");
+    double time_photon_scattering = MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon.csv", "photon_bins.csv");
 
     // Question 3
-    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 10, 0.03, "rayleigh_blue.csv", "rayleigh_blue_bins.csv");
+    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 200 / 10, 0, "rayleigh_blue.csv", "rayleigh_blue_bins.csv");
 
-    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 0.1, 0.01, "rayleigh_other.csv", "rayleigh_other_bins.csv");
+    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 200 / 1, 0, "rayleigh_other.csv", "rayleigh_other_bins.csv");
 
     return 0;
 }
