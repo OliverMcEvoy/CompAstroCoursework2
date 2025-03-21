@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
+#include <omp.h>
+#include <string.h>
 
 // While I dislike using global varibales it makes sense for pi, I try not to use MP_PI as a refrence for pi as it is not defined in standard C
 double pi = 3.141592653589793;
@@ -16,7 +18,7 @@ double pi = 3.141592653589793;
  */
 double random_number_with_mapping(int64_t *random_parameters, double lower_bound, double upper_bound)
 {
-    // Extract values, not neccessary but I think it improves readility.
+    // Extract values, not neccessary but I think it improves readility. when the code gets compiled down this is moot code.
     // Note I decided to use a pointer to the seed as if I implement processing over multiple threads, pointers are thread safe while static varibles are typically not
     int64_t *seed = &random_parameters[0];
     int64_t *a = &random_parameters[1];
@@ -72,20 +74,14 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
             }
         }
         fclose(lookup_file);
-        printf("Successfully loaded lookup table from %s\n", filename);
+        printf("Loading table %s\n", filename);
         return lookup_array;
     }
 
     // Otherwise, create a new file and generate the lookup table
     lookup_file = fopen(filename, "w");
-    if (!lookup_file)
-    {
-        fprintf(stderr, "ERROR: Could not create file %s\n", filename);
-        free(lookup_array);
-        return NULL;
-    }
 
-    // First iteration
+    // First iteration handle seperately
     lookup_array[0] = initial_value;
     lookup_array[1] = compute_value1(lookup_array[0]);
     if (columns == 3)
@@ -98,7 +94,7 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         fprintf(lookup_file, "%lf,%lf\n", lookup_array[0], lookup_array[1]);
     }
 
-    printf("Generating lookup table and saving to %s...\n", filename);
+    // printf("Lookup table saved to %s...\n", filename);
     for (int32_t i = 1; i < length_of_array; i++)
     {
         // Generate the next z value
@@ -130,8 +126,8 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
  */
 double probability_of_mu(double mu)
 {
-    // 3 and 8 have to be specified as doubles to avoid the interpretation of the math on them being done first and therefore having a non-double * a double
-    return (double)3 / (double)8 * (1 + pow(mu, 2));
+    // Expressing 3/8 as 0.375 to avoid floating point division
+    return 0.375 * (1 + pow(mu, 2));
 }
 
 /**
@@ -258,7 +254,7 @@ void binary_search_3_columns(double u, double *lookup_table, int32_t size_of_tab
 {
     int32_t low = 0, high = size_of_table - 1;
 
-    // Binary search
+    // Binary search. more or less halfs the size of the table until it finds where the value was. Seems to be the most efficent search for this anyways
     while (low <= high)
     {
         int32_t mid = low + (high - low) / 2;
@@ -274,7 +270,7 @@ void binary_search_3_columns(double u, double *lookup_table, int32_t size_of_tab
         }
     }
 
-    // update dz and dy
+    // Update dz and dy using their memory address.
     *dz = (lookup_table[3 * low + 1] + lookup_table[3 * high + 1]) * 0.5;
     *dy = (lookup_table[3 * low + 2] + lookup_table[3 * high + 2]) * 0.5;
 }
@@ -297,29 +293,42 @@ double calculate_b_from_theta(double theta)
     // Also its an odd function so it functions as intended whenever theta < 0
     return 2 * theta + (double)(1 / (2 * pi)) * sin(4 * pi * theta);
 }
-void photon_scattering(int64_t total_photon_count, int64_t *random_parameters, int do_rayleigh_scattering, double mean_free_path, const char *results_file_name, const char *binned_file_name)
+
+int32_t photon_scatters(double absortption_probability, int64_t *random_parameters)
+{
+    double scatter = random_number_with_mapping(random_parameters, 0, 1);
+
+    if (scatter > absortption_probability)
+        return 1;
+    // Else isnt actually needed but readability and stuff.
+    else
+        return 0;
+}
+
+void photon_scattering(int64_t total_photon_count,
+                       int64_t *random_parameters,
+                       int do_rayleigh_scattering,
+                       double mean_free_path,
+                       double absorption_probablity,
+                       const char *results_file_name,
+                       const char *binned_file_name)
 {
     // Size of table, start value, final value
-    int32_t size_of_table = 5000, number_of_bins = 10;
-    int32_t lookup_table_params[3] = {size_of_table, -2, 2};
+    int32_t size_of_displacement_table = 5000, number_of_bins = 10;
+    int32_t lookup_table_params[3] = {size_of_displacement_table, -2, 2};
 
     double escape_z = 200;
     double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *get_z_from_u, *get_y_from_u_and_z);
-
-    FILE *photon_scattering_results, *binned_intensity;
-    if ((photon_scattering_results = fopen(results_file_name, "w")) == NULL ||
-        (binned_intensity = fopen(binned_file_name, "w")) == NULL)
-    {
-        printf("Error opening file!\n");
-        return;
-    }
 
     // I should only do this if rayliegh scattering, ah well.
     int32_t size_of_scattering_table = 2000;
     int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -2, 2};
     double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "scattering_angle_lookup.csv", *calculate_b_from_theta, NULL);
 
+    // THis is silly, ah well
     int32_t bin_counts[number_of_bins];
+    // memset(bin_counts, 0, sizeof(bin_counts));
+
     double bin_midpoints[number_of_bins], bin_intensity[number_of_bins], bin_edges[number_of_bins + 1];
 
     // Set up the bins and their mid points
@@ -327,82 +336,139 @@ void photon_scattering(int64_t total_photon_count, int64_t *random_parameters, i
     {
         bin_edges[i] = (-pi / 2.0) + pi * i / number_of_bins;
     }
-
     for (int32_t i = 0; i < number_of_bins; i++)
     {
         double theta_mid = (bin_edges[i] + bin_edges[i + 1]) / 2.0;
         bin_midpoints[i] = cos(theta_mid);
     }
-
     // There has to be a better way to do this, I do not like this but it fixes a bug.
     for (int32_t i = 0; i < number_of_bins; i++)
     {
         bin_counts[i] = 0;
     }
 
-    for (int32_t i = 0; i < total_photon_count; i++)
+    // Struct for saving the results
+    typedef struct
     {
-        // Initial values
-        double y = 0, z = 0, dz = 0, dy = 0, t = 0, sum_t = 0, theta = 0, u = 0;
+        double y;
+        double intensity;
+        int q;
+    } result_t;
 
-        int q = 0;
+    // Allocate a global results array that will be filled by the threads.
+    result_t *global_results = malloc(total_photon_count * sizeof(result_t));
+    if (!global_results)
+    {
+        fprintf(stderr, "ERROR: Memory allocation failed for global results\n");
+        return;
+    }
 
-        // Start it towards the z direction if Rayleigh scattering
-        if (do_rayleigh_scattering)
+    // Global counter for the number of valid photon results obtained.
+    int global_valid_count = 0;
+
+    // Parallel region: each thread uses its own RNG copy and local bin counters,
+    // and runs the simulation until the total_photon_count of valid results is reached.
+#pragma omp parallel
+    {
+        // Each thread gets its own copy of the values for the random number generator
+        int64_t thread_id = (int64_t)random_number_with_mapping(random_parameters, 0, 100);
+        int64_t local_rand[4];
+        local_rand[0] = random_parameters[0] + thread_id; // local seed
+        local_rand[1] = random_parameters[1];
+        local_rand[2] = random_parameters[2];
+        local_rand[3] = random_parameters[3];
+
+        // Each thread has its local bin counts to avoid synchronization overhead.
+        // And more silly setting everything to 0, some strange errors occur if I dont.
+        int32_t local_bin_counts[number_of_bins];
+        for (int32_t i = 0; i < number_of_bins; i++)
         {
-            z += -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
-            u += 2;
+            local_bin_counts[i] = 0;
         }
 
-        // Loop until photon escapes
-        while (z >= 0 && z <= escape_z)
-        {
+        // memset(local_bin_counts, 0, sizeof(local_bin_counts));
 
-            // Getting a bit too indented for my liking but it will have to do.
+        // Simulation loop: run until the total valid photon count is reached.
+        // I really dislike while loops and much prefer for loops but for this scenario there is edge cases a while loop covers that a for loop does not ( mainly around decreasing the incremnet in a thread safe manor)
+        while (1)
+        {
+            int32_t current_count;
+            // prevent other threads modifying the value while checking if the loop is complete.
+#pragma omp atomic read
+            current_count = global_valid_count;
+            if (current_count >= total_photon_count)
+                break;
+
+            // Initial values
+            double y = 0, z = 0, dz = 0, dy = 0, t = 0, sum_t = 0, theta = 0, u = 0;
+            int q = 0;
+
+            // Start it towards the z direction if Rayleigh scattering
             if (do_rayleigh_scattering)
             {
-                // Adjust theta by a probabilistic amount
-                double b = random_number_with_mapping(random_parameters, -4, 4);
-                theta = binary_search_2_columns(b, scattering_lookup_array, size_of_scattering_table);
-                u += theta;
-
-                // Check for a complete rotation
-                if (u > 2)
-                    u -= 4;
-                if (u < -2)
-                    u += 4;
+                z += -log(random_number_with_mapping(local_rand, 0, 1)) * mean_free_path;
+                u += 2;
+                if (!photon_scatters(absorption_probablity, local_rand))
+                {
+#pragma omp atomic update
+                    global_valid_count++; // Increase count even if absorbed
+                    continue;
+                }
             }
-            else
+
+            // Loop until photon escapes
+            while (z >= 0 && z <= escape_z)
             {
-                u = random_number_with_mapping(random_parameters, -2, 2);
+                if (do_rayleigh_scattering)
+                {
+                    // Adjust theta by a probabilistic amount
+                    double b = random_number_with_mapping(local_rand, -4, 4);
+                    theta = binary_search_2_columns(b, scattering_lookup_array, size_of_scattering_table);
+                    u += theta;
+
+                    // Check for a complete rotation
+                    if (u > 2)
+                        u -= 4;
+                    if (u < -2)
+                        u += 4;
+                }
+                else
+                {
+                    u = random_number_with_mapping(local_rand, -2, 2);
+                }
+
+                // Pass in the memory address of dz and dy to update them
+                binary_search_3_columns(u, displacement_lookup_array, size_of_displacement_table, &dz, &dy);
+
+                // Calculate the distance travelled using a direct map
+                t = -log(random_number_with_mapping(local_rand, 0, 1)) * mean_free_path;
+
+                if (!photon_scatters(absorption_probablity, local_rand))
+                {
+#pragma omp atomic update
+                    global_valid_count++; // Increase count even if absorbed
+                    continue;
+                }
+
+                sum_t += t;
+                z += dz * t;
+                y += dy * t;
+                q++;
             }
 
-            // Pass in the memory address of dz and dy to update them, If I was to generalise to N dimensions a array would be better but this works alright for now
-            binary_search_3_columns(u, displacement_lookup_array, size_of_table, &dz, &dy);
+            // Compute and print average t (if needed)
+            if (q > 0)
+            {
+                double avg_t = sum_t / (double)q;
+                // printf("Average t: %f\n", avg_t);
+            }
 
-            // Calculate the distance travelled using a direct map. TODO: another lookup table for this one?
-            t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
+            // Check which direction the photon escaped from
+            if (z < 0)
+            {
+                continue;
+            }
 
-            sum_t += t;
-            z += dz * t;
-            y += dy * t;
-            q++;
-        }
-
-        // Compute and print average t
-        if (q > 0)
-        {
-            double avg_t = sum_t / (double)q;
-            // printf("Average t: %f\n", avg_t);
-        }
-
-        // Check which direction the photon escaped from
-        if (z < 0)
-        {
-            --i;
-        }
-        else
-        {
             // As the material is infinite in the y plane, assume if it didn't escape in z < 0, it escaped in z > 0.
             // Then from this calculate the angle from the origin
 
@@ -418,49 +484,96 @@ void photon_scattering(int64_t total_photon_count, int64_t *random_parameters, i
             double theta_lab = atan(y / escape_z);
             double intensity = cos(theta_lab);
 
-            fprintf(photon_scattering_results, "%f,%f,%d\n", y, intensity, q);
+            // Update local bin counts (no critical section here)
+            int bin_index = find_bin_index(theta_lab, bin_edges, number_of_bins);
+            if (bin_index >= 0 && bin_index < number_of_bins)
+            {
+                local_bin_counts[bin_index]++;
+            }
 
-            int32_t bin_index = find_bin_index(theta_lab, bin_edges, number_of_bins);
-            bin_counts[bin_index]++;
+            // Atomically capture an index to store this photon result in the global results array.
+            // Quite proud of this logic, took a while to figure this out and there might be a better way but it does the job
+            int my_index;
+#pragma omp atomic capture
+            my_index = global_valid_count++;
+
+            if (my_index < total_photon_count)
+            {
+                global_results[my_index].y = y;
+                global_results[my_index].intensity = intensity;
+                global_results[my_index].q = q;
+            }
+        } // end of the cursed while loop
+
+        // Merge thread bin counts into global bin_counts.
+#pragma omp critical
+        {
+            for (int i = 0; i < number_of_bins; i++)
+            {
+                bin_counts[i] += local_bin_counts[i];
+            }
         }
+    } // end parallel region
+
+    // Write photon scattering results to file after simulation completes.
+    FILE *photon_scattering_results = fopen(results_file_name, "w");
+    if (photon_scattering_results == NULL)
+    {
+        printf("Error opening file!\n");
+        free(global_results);
+        free(displacement_lookup_array);
+        free(scattering_lookup_array);
+        return;
+    }
+    for (int i = 0; i < total_photon_count; i++)
+    {
+        fprintf(photon_scattering_results, "%f,%f,%d\n", global_results[i].y, global_results[i].intensity, global_results[i].q);
     }
     fclose(photon_scattering_results);
 
-    // Write binned intensity results
-    for (int32_t i = 0; i < number_of_bins; i++)
+    // Write binned intensity results to file.
+    FILE *binned_intensity = fopen(binned_file_name, "w");
+    if (binned_intensity == NULL)
+    {
+        printf("Error opening file!\n");
+        free(global_results);
+        free(displacement_lookup_array);
+        free(scattering_lookup_array);
+        return;
+    }
+    for (int i = 0; i < number_of_bins; i++)
     {
         bin_intensity[i] = (double)bin_counts[i] * fabs(bin_midpoints[i]) / (double)total_photon_count;
         fprintf(binned_intensity, "%lf,%lf,%lf,%lf\n", bin_midpoints[i], bin_intensity[i], bin_edges[i], bin_edges[i + 1]);
     }
     fclose(binned_intensity);
+
+    free(global_results);
+    free(displacement_lookup_array);
+    free(scattering_lookup_array);
 }
+
+// Time Macro as the code was getting a bit messy doing this at the start and end of every function.
+#define MEASURE_TIME(func, ...) ({                                  \
+    clock_t start = clock();                                        \
+    func(__VA_ARGS__);                                              \
+    clock_t end = clock();                                          \
+    double time_taken = (double)(end - start) / CLOCKS_PER_SEC;     \
+    printf("Time taken for %s: %.6f seconds\n", #func, time_taken); \
+    time_taken;                                                     \
+})
 
 int main()
 {
-
-    //
-    // As seed, a,c,m will all be used in operations with each other I am declaring them as the same type to ensure type safe code.
     int64_t seed = 1, a = 16807, c = 0, m = 2147483647;
     int64_t rand_parameters[] = {seed, a, c, m};
 
-    // Questinon 1.
+    int32_t number_of_random_samples = 500000;
 
-    int32_t number_of_samples = 500000;
+    // Question 1
+    double time_rejection = MEASURE_TIME(rejection_sampling, number_of_random_samples, rand_parameters, 0, 3.14);
+    double time_direct = MEASURE_TIME(direct_mapping, number_of_random_samples, rand_parameters);
 
-    clock_t start_rejection = clock();
-    rejection_sampling(number_of_samples, rand_parameters, 0, 3.14);
-    clock_t end_rejection = clock();
-    double time_rejection = (double)(end_rejection - start_rejection) / CLOCKS_PER_SEC;
-
-    printf("Time taken for rejection_sampling: %.6f seconds\n", time_rejection);
-
-    clock_t start_direct = clock();
-    direct_mapping(number_of_samples, rand_parameters);
-    clock_t end_direct = clock();
-    double time_direct = (double)(end_direct - start_direct) / CLOCKS_PER_SEC;
-    printf("Time taken for direct_mapping: %.6f seconds\n", time_direct);
-
-    // Compare the two methods
     if (time_rejection < time_direct)
     {
         printf("rejection_sampling was faster by %.6f seconds\n", time_direct - time_rejection);
@@ -470,21 +583,13 @@ int main()
         printf("direct_mapping was faster by %.6f seconds\n", time_rejection - time_direct);
     }
 
-    // Question 2.
-
-    int64_t total_photon_count = 100000;
-
-    clock_t start_photon_scattering = clock();
-    photon_scattering(total_photon_count, rand_parameters, 0, 10, "photon.csv", "photon_bins.csv");
-    clock_t end_photon_scattering = clock();
-    double time_photon_scattering = (double)(end_photon_scattering - start_photon_scattering) / CLOCKS_PER_SEC;
-
-    printf("Photon scattering completed in %.6f\n", time_photon_scattering);
+    int64_t total_photon_count = 400;
+    // Question 2
+    double time_photon_scattering = MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 0, 10, 0, "photon.csv", "photon_bins.csv");
 
     // Question 3
-
-    photon_scattering(total_photon_count, rand_parameters, 1, 10, "rayleigh_blue.csv", "rayleigh_blue_bins.csv");
-    photon_scattering(total_photon_count, rand_parameters, 1, 0.1, "rayleigh_other.csv", "rayleigh_other_bins.csv");
+    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 10, 0.05, "rayleigh_blue.csv", "rayleigh_blue_bins.csv");
+    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 0.1, 0.05, "rayleigh_other.csv", "rayleigh_other_bins.csv");
 
     return 0;
 }
