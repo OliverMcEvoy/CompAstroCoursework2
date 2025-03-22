@@ -137,41 +137,39 @@ double calculate_y_from_mu(double mu)
     return (pow(mu, 3) + 3 * mu + 4) * 0.125;
 }
 
-// Q2 and further lookup calculations
 double calculate_z_from_u(double u)
 {
-    // In theory if the distance travelled
-    double r = 1.0;
-    if (u < 0)
-        u += 1;
-
-    // Edge case where at the end of the circle ( 1.9999 as floating points)
-    else if (u > 1.999999)
-        return 1;
-
-    else if (u > 0)
-        u -= 1;
-
-    return r * (2.0 / pi) * asin(u / r);
+    // Deal with square root of 1.
+    if (u > 0.99999)
+        return 1.0;
+    return copysign(1.0 - sqrt(1.0 - u * u), u);
 }
 
+/**
+ * Compute y using a deterministic azimuthal angle
+ * @param u A value in range [-2, 2]
+ * @param z The calculated z-coordinate
+ * @return y-coordinate on the sphere
+ */
 double calculate_y_from_u_and_z(double u, double z)
 {
-    double r = 1.0;
-
-    if (u < 0)
-        return sqrt(r * r - z * z);
-
-    else if (u > 0)
-        return -sqrt(r * r - z * z);
+    double phi = 50.0 * pi * u;   // Deterministic azimuthal angle
+    double r = sqrt(1.0 - z * z); // Radius at that z slice
+    return r * sin(phi);
 }
+
+/**
+ * Compute x using a deterministic azimuthal angle
+ * @param u A value in range [-2, 2]
+ * @param z The calculated z-coordinate
+ * @return x-coordinate on the sphere
+ */
 double calculate_x_from_u_and_z(double u, double z)
 {
-    double r = sqrt(1 - (z * z)); // Ensuring the displacement keeps to a unit sphere
-    double phi = 2 * pi * u;      // ensure a frequency loop around the values of a sphere
+    double phi = 50.0 * pi * u;   // Deterministic azimuthal angle
+    double r = sqrt(1.0 - z * z); // Radius at that z slice
     return r * cos(phi);
 }
-
 void binary_search_2_columns(double y, const double *lookup_table, int32_t size_of_table, double *mu)
 {
     // set boundaries at the extremes of the table
@@ -216,13 +214,13 @@ void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_tab
     *dy = (lookup_table[4 * low + 2] + lookup_table[4 * high + 2]) * 0.5;
     *dx = (lookup_table[4 * low + 3] + lookup_table[4 * high + 3]) * 0.5;
 }
-// See report for derivation.
-double calculate_b_from_theta(double theta)
-{
-    // 2 theta * 1/2pi sin(4 pi theta). I dislike doing division in C, but the generation of the lookup table is not a bottle neck one bit so ah well.
-    // Also its an odd function so it functions as intended whenever theta < 0
-    return 2 * theta + (double)(1 / (2 * pi)) * sin(4 * pi * theta);
-}
+// // See report for derivation. NOT NEEDED ANYMORE THANK GOD
+// double calculate_b_from_theta(double theta)
+// {
+//     // 2 theta * 1/2pi sin(4 pi theta). I dislike doing division in C, but the generation of the lookup table is not a bottle neck one bit so ah well.
+//     // Also its an odd function so it functions as intended whenever theta < 0
+//     return 2 * theta + (double)(1 / (2 * pi)) * sin(4 * pi * theta);
+// }
 /**
  * Function to calculate the probability of mu according to the given formula.
  * @param mu The input for which we want to calculate the probability.
@@ -302,181 +300,283 @@ int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of
         }
     }
 }
-// does the photon scatter or not
-int32_t photon_scatters(double absortption_probability, int64_t *random_parameters)
+
+// Function to normalise a 3D vector
+void normalise(double v[3])
+{
+    double inverse_magnitude = 1 / sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    v[0] *= inverse_magnitude;
+    v[1] *= inverse_magnitude;
+    v[2] *= inverse_magnitude;
+}
+
+// Function to multiply a vector by a scalar
+void multiply_vector(double v[3], double x)
+{
+    v[0] *= x;
+    v[1] *= x;
+    v[2] *= x;
+}
+
+// Compute the dot product of two 3D vectors
+double dot_product(double v1[3], double v2[3])
+{
+    return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
+}
+
+// Compute the cross product of two 3D vectors (result stored in result vector)
+void cross_product(double v1[3], double v2[3], double result[3])
+{
+    result[0] = v1[1] * v2[2] - v1[2] * v2[1];
+    result[1] = v1[2] * v2[0] - v1[0] * v2[2];
+    result[2] = v1[0] * v2[1] - v1[1] * v2[0];
+}
+
+// Rotate a vector around an axis by a given angle
+void rotate_vector(double v[3], double axis[3], double angle)
+{
+    normalise(axis);
+
+    // Rodrigues' rotation formula
+    double dot = dot_product(v, axis);
+    double cross[3];
+    cross_product(v, axis, cross);
+
+    // Apply rotation
+    for (int i = 0; i < 3; i++)
+    {
+        v[i] = v[i] * cos(angle) + cross[i] * sin(angle) + axis[i] * dot * (1 - cos(angle));
+    }
+}
+
+// Does the photon scatter or not
+int32_t photon_scatters(double absorption_probability, int64_t *random_parameters)
 {
     double scatter = random_number_with_mapping(random_parameters, 0, 1);
 
-    if (scatter > absortption_probability)
+    if (scatter > absorption_probability)
         return 1;
-    // Else isnt actually needed but readability and stuff.
+    // Else isn't actually needed but readability and stuff.
     else
         return 0;
 }
 
-// The logic for photon scattering.
 void photon_scattering(int64_t total_photon_count,
                        int64_t *random_parameters,
                        int do_rayleigh_scattering,
                        double mean_free_path,
-                       double absorption_probablity,
-                       const char *results_file_name,
-                       const char *binned_file_name)
+                       double absorption_probability,
+                       const char *binned_angle_file_name,
+                       const char *binned_position_file_name)
 {
     // Size of table, start value, final value
-    int32_t size_of_displacement_table = 50000, number_of_bins = 10;
-    int32_t lookup_table_params[3] = {size_of_displacement_table, -2, 2};
+    int32_t size_of_displacement_table = 25000, number_of_angle_bins = 10, number_of_position_bins = 4000;
+    int32_t lookup_table_params[3] = {size_of_displacement_table, -1, 1};
 
     double escape_z = 200;
     double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *calculate_z_from_u, *calculate_y_from_u_and_z, *calculate_x_from_u_and_z);
 
-    FILE *photon_scattering_results, *binned_intensity;
-    if ((photon_scattering_results = fopen(results_file_name, "w")) == NULL ||
-        (binned_intensity = fopen(binned_file_name, "w")) == NULL)
-    {
-        printf("Error opening file!\n");
-        return;
-    }
+    FILE *binned_angle_results, *binned_position_results;
+    binned_angle_results = fopen(binned_angle_file_name, "w");
+    binned_position_results = fopen(binned_position_file_name, "w");
 
-    // I should only do this if rayliegh scattering, ah well.
+    // I should only do this if Rayleigh scattering, ah well.
     int32_t size_of_scattering_table = 25000;
-    int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -4, 4};
-    double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "scattering_angle_lookup.csv", *calculate_b_from_theta, NULL, NULL);
+    int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -1, 1};
+    double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "rayleigh_scattering_lookup.csv", *calculate_y_from_mu, NULL, NULL);
 
-    int32_t bin_counts[number_of_bins];
-    double bin_midpoints[number_of_bins], bin_intensity[number_of_bins], bin_edges[number_of_bins + 1];
+    // Angle-based binning setup
+    int32_t angle_bin_counts[number_of_angle_bins];
+    double angle_bin_edges[number_of_angle_bins + 1], angle_bin_midpoints[number_of_angle_bins], angle_bin_intensity[number_of_angle_bins];
 
-    // Set up the bins and their mid points
-    for (int32_t i = 0; i <= number_of_bins; i++)
+    double position_bin_edges[number_of_position_bins + 1];
+
+    // Counts for x, y, z, and q
+    int32_t x_bin_counts[number_of_position_bins];
+    int32_t y_bin_counts[number_of_position_bins];
+    int32_t z_bin_counts[number_of_position_bins];
+    int32_t q_bin_counts[number_of_position_bins];
+    // Set up the angle bins for equal solid angle
+    for (int i = 0; i <= number_of_angle_bins; i++)
     {
-        bin_edges[i] = pi * i / (2 * number_of_bins);
+        double fraction = (double)i / number_of_angle_bins;
+        angle_bin_edges[i] = acos(1.0 - fraction);
     }
 
-    for (int32_t i = 0; i < number_of_bins; i++)
+    // Initialize bin counts
+    for (int i = 0; i < number_of_angle_bins; i++)
     {
-        double theta_origin_midpoint = (bin_edges[i] + bin_edges[i + 1]) / 2.0;
-        bin_midpoints[i] = cos(theta_origin_midpoint);
+        angle_bin_counts[i] = 0;
     }
-    // There has to be a better way to do this, I do not like this but it fixes a bug.
-    for (int32_t i = 0; i < number_of_bins; i++)
+
+    // Compute midpoints
+    for (int i = 0; i < number_of_angle_bins; i++)
     {
-        bin_counts[i] = 0;
+        angle_bin_midpoints[i] = 0.5 * (angle_bin_edges[i] + angle_bin_edges[i + 1]);
+    }
+
+    // Set up the position bins and their edges
+    double position_bin_width = 1.0; // Each bin represents an integer range (e.g., -2000 to -1999, -1999 to -1998, etc.)
+    for (int32_t i = 0; i <= number_of_position_bins; i++)
+    {
+        position_bin_edges[i] = -2000 + i * position_bin_width;
+    }
+
+    for (int32_t i = 0; i < number_of_position_bins; i++)
+    {
+        x_bin_counts[i] = 0;
+        y_bin_counts[i] = 0;
+        z_bin_counts[i] = 0;
+        q_bin_counts[i] = 0;
     }
 
 #pragma omp parallel for
     for (int32_t i = 0; i < total_photon_count; i++)
     {
         // Initial values
-        double y = 0, z = 0, x = 0, dz = 0, dy = 0, dx = 0, t = 0, sum_t = 0, theta = 0, u = 0;
+        double position[3] = {0, 0, 0};  // [x, y, z]
+        double direction[3] = {0, 0, 0}; // [dx, dy, dz]
+        double t = 0, u = 0, theta = 0, theta_displacement = 0, theta_lab = 0;
+        int32_t q = 0;
+        double b_vector[3] = {0, 0, 0};
 
-        int q = 0;
-
-        // Start it towards the z direction if Rayleigh scattering
+        // Start it towards the z direction if Rayleigh scattering, and also initialize 2 more vectors
         if (do_rayleigh_scattering)
         {
-            z += -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
-            u += 2;
-
-            if (!photon_scatters(absorption_probablity, random_parameters))
+            position[2] += -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
+            theta = 1;
+            if (!photon_scatters(absorption_probability, random_parameters))
                 continue;
         }
 
         // Loop until photon escapes
-        while (z >= 0 && z <= escape_z)
+        while (position[2] >= 0 && position[2] <= escape_z)
         {
             if (do_rayleigh_scattering)
             {
-                // Adjust theta by a probabilistic amount
-                double b = random_number_with_mapping(random_parameters, -4, 4);
-                binary_search_2_columns(b, scattering_lookup_array, size_of_scattering_table, &theta);
-                u += theta;
+                if (!photon_scatters(absorption_probability, random_parameters))
+                    continue;
+                // Find what u is meant to be
+                double b = random_number_with_mapping(random_parameters, 0, 1);
+                binary_search_2_columns(b, scattering_lookup_array, size_of_scattering_table, &theta_displacement);
 
-                // Check for a complete rotation
-                if (u > 2)
-                    u -= 4;
-                if (u < -2)
-                    u += 4;
+                b_vector[0] = position[0];
+                b_vector[1] = position[1];
+                b_vector[2] = position[2];
+                normalise(b_vector);
+                multiply_vector(b_vector, theta_displacement);
+
+                // Calculate the angle between b_vector and the z-axis.
+                double z_axis[3] = {0, 0, 1};
+                double dot = dot_product(b_vector, z_axis);
+                double angle = acos(dot);
+
+                // Calculate the rotation axis (cross product of b_vector and z-axis).
+                double rotation_axis[3];
+                cross_product(b_vector, z_axis, rotation_axis);
+                normalise(rotation_axis);
+
+                // Rotate the direction vector
+                rotate_vector(direction, rotation_axis, angle);
+
+                // Technically I could always work in terms of u but I think this is more readable.
+                u = theta_displacement;
+
+                // Pass in the memory address of direction array to update dx, dy, dz
+                binary_search_4_columns(u, displacement_lookup_array, size_of_displacement_table, &direction[0], &direction[1], &direction[2]);
+
+                // Calculate the distance travelled using a direct map
+                t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
+
+                position[0] += direction[0] * t;
+                position[1] += direction[1] * t;
+                position[2] += direction[2] * t;
+                q++;
             }
             else
             {
-                u = random_number_with_mapping(random_parameters, -2, 2);
+                u = random_number_with_mapping(random_parameters, -1, 1);
+
+                // Pass in the memory address of direction array to update dx, dy, dz
+                binary_search_4_columns(u, displacement_lookup_array, size_of_displacement_table, &direction[2], &direction[1], &direction[0]);
+
+                // Calculate the distance travelled using a direct map
+                t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
+
+                if (!photon_scatters(absorption_probability, random_parameters))
+                    continue;
+
+                position[2] += direction[2] * t;
+                position[1] += direction[1] * t;
+                position[0] += direction[0] * t;
+                q++;
             }
-
-            // Pass in the memory address of dz and dy to update them
-            binary_search_4_columns(u, displacement_lookup_array, size_of_displacement_table, &dz, &dy, &dx);
-
-            // Calculate the distance travelled using a direct map
-            t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
-
-            if (!photon_scatters(absorption_probablity, random_parameters))
-                continue;
-
-            sum_t += t;
-            z += dz * t;
-            y += dy * t;
-            x += dx * t;
-            q++;
         }
 
-        // Compute and print average t
-        if (q > 0)
-        {
-            double avg_t = sum_t / (double)q;
-            // printf("Average t: %f\n", avg_t);
-        }
-
-        // Check which direction the photon escaped from
-        if (z < 0)
+        if (position[2] < 0)
         {
             --i;
             continue;
         }
 
-        // As the material is infinite in the y plane, assume if it didn't escape in z < 0, it escaped in z > 0.
-        // Then from this calculate the angle from the origin
+        int32_t x_bin_index = (int32_t)(position[0] + 2000);
+        int32_t y_bin_index = (int32_t)(position[1] + 2000);
+        int32_t z_bin_index = (int32_t)(position[2] + 2000);
+        theta_lab = atan(position[1] / escape_z);
 
-        // First, adjustment for overshooting. we want where it crosses z = 200
-        double overshoot_z = z - escape_z;
-        // As the ratios will remain the same we can find the overshoot y as a ratio relative to the z overshoot
-        double overshoot_y = overshoot_z * dy / dz;
-
-        // Apply the overshoot correction
-        y -= overshoot_y;
-
-        // Find the angle.
-        double theta_lab = atan(y / escape_z);
-        double intensity = cos(theta_lab);
-
-// Just to make sure threads dont try write at the same time. It slows things down but I can only be so agressive in my thread saftey
-#pragma omp critical
+        // #pragma omp critical
         {
-            fprintf(photon_scattering_results, "%lf,%lf,%lf,%d\n", y, x, intensity, q);
+            // Angle-based binning
+            int32_t angle_bin_index = find_bin_index(theta_lab, angle_bin_edges, number_of_angle_bins);
+            angle_bin_counts[angle_bin_index]++;
 
-            int32_t bin_index = find_bin_index(theta_lab, bin_edges, number_of_bins);
-            bin_counts[bin_index]++;
+            // Position-based binning.
+            if (x_bin_index >= 0 && x_bin_index < number_of_position_bins)
+            {
+                x_bin_counts[x_bin_index]++;
+            }
+            if (y_bin_index >= 0 && y_bin_index < number_of_position_bins)
+            {
+                y_bin_counts[y_bin_index]++;
+            }
+            if (z_bin_index >= 0 && z_bin_index < number_of_position_bins)
+            {
+                z_bin_counts[z_bin_index]++;
+            }
+
+            // Use z_bin_index for q counts (or adjust as needed)
+            if (z_bin_index >= 0 && z_bin_index < number_of_position_bins)
+            {
+                q_bin_counts[z_bin_index] += q;
+            }
         }
     }
-    fclose(photon_scattering_results);
 
-    // Write binned intensity results
-    for (int32_t i = 0; i < number_of_bins; i++)
+    for (int32_t i = 0; i < number_of_angle_bins; i++)
     {
-        bin_intensity[i] = (double)bin_counts[i] * fabs(bin_midpoints[i]) / (double)total_photon_count;
-        fprintf(binned_intensity, "%lf,%lf,%lf,%lf\n", bin_midpoints[i], bin_intensity[i], bin_edges[i], bin_edges[i + 1]);
+        angle_bin_intensity[i] = (double)angle_bin_counts[i] * cos(angle_bin_midpoints[i]) / (double)total_photon_count;
+        fprintf(binned_angle_results, "%lf,%lf,%lf,%lf\n", angle_bin_midpoints[i], angle_bin_intensity[i], angle_bin_edges[i], angle_bin_edges[i + 1]);
     }
-    fclose(binned_intensity);
+    fclose(binned_angle_results);
+
+    // Write position-based binning results
+    for (int32_t i = 0; i < number_of_position_bins; i++)
+    {
+        fprintf(binned_position_results, "%lf,%lf,%d,%d,%d,%d\n", position_bin_edges[i], position_bin_edges[i + 1], x_bin_counts[i], y_bin_counts[i], z_bin_counts[i], q_bin_counts[i]);
+    }
+    fclose(binned_position_results);
+
     free(displacement_lookup_array);
     free(scattering_lookup_array);
 }
-
 // Time Macro as the code was getting a bit messy doing this at the start and end of every function.
-#define MEASURE_TIME(func, ...) ({                                                             \
-    clock_t start = clock();                                                                   \
-    func(__VA_ARGS__);                                                                         \
-    clock_t end = clock();                                                                     \
-    double time_taken = (double)(end - start) / CLOCKS_PER_SEC;                                \
-    printf("Total compute time across all threads for %s: %.6f seconds\n", #func, time_taken); \
-    time_taken;                                                                                \
+#define MEASURE_TIME(func, ...) ({                                                                  \
+    clock_t start = clock();                                                                        \
+    func(__VA_ARGS__);                                                                              \
+    clock_t end = clock();                                                                          \
+    double time_taken = (double)(end - start) / CLOCKS_PER_SEC;                                     \
+    printf("Total compute time across all threads used for %s: %.6f seconds\n", #func, time_taken); \
+    time_taken;                                                                                     \
 })
 
 int main()
@@ -498,15 +598,15 @@ int main()
         printf("direct_mapping was faster by %.6f seconds\n", time_rejection - time_direct);
     }
 
-    int32_t total_photon_count = 1000;
+    int32_t total_photon_count = 1000000;
 
     // Question 2
-    double time_photon_scattering = MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon.csv", "photon_bins.csv");
+    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon_bins.csv", "photon_position_bins.csv");
 
     // Question 3
-    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 200 / 10, 0, "rayleigh_blue.csv", "rayleigh_blue_bins.csv");
+    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 200 / 10, 0, "rayleigh_blue_bins.csv", "rayleigh_blue_position_bins.csv");
 
-    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 200 / 1, 0, "rayleigh_other.csv", "rayleigh_other_bins.csv");
+    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 200 / 0.1, 0, "rayleigh_other_bins.csv", "rayleigh_other_position_bins.csv");
 
     return 0;
 }

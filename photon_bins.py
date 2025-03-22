@@ -38,7 +38,7 @@ for idx, (data, title) in enumerate(zip(dataframes, titles)):
     bin_edge_upper = data["bin_edge_upper"]
 
     # Compute theta in degrees
-    theta = np.arccos(mu)
+    theta = np.cos(mu)
 
     # Top row: Intensity vs mu
     ax_mu = axes[0, idx]
@@ -56,7 +56,7 @@ for idx, (data, title) in enumerate(zip(dataframes, titles)):
 
     ax_mu.set_xlabel(r"$\mu = \cos\theta$", fontsize=12)
     ax_mu.set_ylabel("Normalized Intensity", fontsize=12)
-    ax_mu.set_title(title + " (vs. $\mu$)", fontsize=14)
+    ax_mu.set_title(title + " (vs. theta)", fontsize=14)
     ax_mu.legend()
 
     # Bottom row: Intensity vs theta
@@ -69,7 +69,6 @@ for idx, (data, title) in enumerate(zip(dataframes, titles)):
     ax_theta.legend()
 
 # Adjust layout and save the plot
-plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to make room for main title
 plt.savefig("intensity_vs_mu_and_theta.png", dpi=300, bbox_inches="tight")
 
 # Show the plot
