@@ -131,6 +131,47 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
     return lookup_array;
 }
 
+// The inverse culumitive distribution function for y
+double calculate_y_from_mu(double mu)
+{
+    return (pow(mu, 3) + 3 * mu + 4) * 0.125;
+}
+
+// Q2 and further lookup calculations
+double calculate_z_from_u(double u)
+{
+    // In theory if the distance travelled
+    double r = 1.0;
+    if (u < 0)
+        u += 1;
+
+    // Edge case where at the end of the circle ( 1.9999 as floating points)
+    else if (u > 1.999999)
+        return 1;
+
+    else if (u > 0)
+        u -= 1;
+
+    return r * (2.0 / pi) * asin(u / r);
+}
+
+double calculate_y_from_u_and_z(double u, double z)
+{
+    double r = 1.0;
+
+    if (u < 0)
+        return sqrt(r * r - z * z);
+
+    else if (u > 0)
+        return -sqrt(r * r - z * z);
+}
+double calculate_x_from_u_and_z(double u, double z)
+{
+    double r = sqrt(1 - (z * z)); // Ensuring the displacement keeps to a unit sphere
+    double phi = 2 * pi * u;      // ensure a frequency loop around the values of a sphere
+    return r * cos(phi);
+}
+
 void binary_search_2_columns(double y, const double *lookup_table, int32_t size_of_table, double *mu)
 {
     // set boundaries at the extremes of the table
@@ -175,6 +216,13 @@ void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_tab
     *dy = (lookup_table[4 * low + 2] + lookup_table[4 * high + 2]) * 0.5;
     *dx = (lookup_table[4 * low + 3] + lookup_table[4 * high + 3]) * 0.5;
 }
+// See report for derivation.
+double calculate_b_from_theta(double theta)
+{
+    // 2 theta * 1/2pi sin(4 pi theta). I dislike doing division in C, but the generation of the lookup table is not a bottle neck one bit so ah well.
+    // Also its an odd function so it functions as intended whenever theta < 0
+    return 2 * theta + (double)(1 / (2 * pi)) * sin(4 * pi * theta);
+}
 /**
  * Function to calculate the probability of mu according to the given formula.
  * @param mu The input for which we want to calculate the probability.
@@ -185,7 +233,6 @@ double probability_of_mu(double mu)
     // Expressing 3/8 as 0.375 to avoid floating point division
     return 0.375 * (1 + pow(mu, 2));
 }
-
 /**
  * Function to perform rejection sampling according to the given parameters.
  * @param num_samples The number of samples to generate.
@@ -218,12 +265,6 @@ void rejection_sampling(int32_t num_samples, int64_t *random_parameters, double 
     fclose(rejection_method_results);
 }
 
-// The inverse culumitive distribution function for y
-double calculate_y_from_mu(double mu)
-{
-    return (pow(mu, 3) + 3 * mu + 4) * 0.125;
-}
-
 // The logic for generating random numbers using direct mapping and a lookup table
 void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
 {
@@ -250,40 +291,6 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
     free(y_to_mu_lookup_array);
 }
 
-double calculate_z_from_u(double u)
-{
-    // In theory if the distance travelled
-    double r = 1.0;
-    if (u < 0)
-        u += 1;
-
-    // Edge case where at the end of the circle ( 1.9999 as floating points)
-    else if (u > 1.999999)
-        return 1;
-
-    else if (u > 0)
-        u -= 1;
-
-    return r * (2.0 / pi) * asin(u / r);
-}
-
-double calculate_y_from_u_and_z(double u, double z)
-{
-    double r = 1.0;
-
-    if (u < 0)
-        return sqrt(r * r - z * z);
-
-    else if (u > 0)
-        return -sqrt(r * r - z * z);
-}
-double calculate_x_from_u_and_z(double u, double z)
-{
-    double r = sqrt(1 - (z * z)); // Ensuring the displacement keeps to a unit sphere
-    double phi = 20 * pi * u;     // ensure a frequency loop around the values of a sphere
-    return r * cos(phi);
-}
-
 // Function to find bin index based on theta
 int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of_bins)
 {
@@ -294,13 +301,6 @@ int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of
             return i;
         }
     }
-}
-// See report for derivation.
-double calculate_b_from_theta(double theta)
-{
-    // 2 theta * 1/2pi sin(4 pi theta). I dislike doing division in C, but the generation of the lookup table is not a bottle neck one bit so ah well.
-    // Also its an odd function so it functions as intended whenever theta < 0
-    return 2 * theta + (double)(1 / (2 * pi)) * sin(4 * pi * theta);
 }
 // does the photon scatter or not
 int32_t photon_scatters(double absortption_probability, int64_t *random_parameters)
@@ -498,7 +498,7 @@ int main()
         printf("direct_mapping was faster by %.6f seconds\n", time_rejection - time_direct);
     }
 
-    int32_t total_photon_count = 1000000;
+    int32_t total_photon_count = 1000;
 
     // Question 2
     double time_photon_scattering = MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon.csv", "photon_bins.csv");
