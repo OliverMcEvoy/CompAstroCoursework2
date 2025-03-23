@@ -32,13 +32,13 @@ titles = ["Photons", "Blue Light", "Other Colours"]
 plt.figure(figsize=(20, 15))  # Larger figure to accommodate 3 rows and 4 columns
 
 # Define the metrics to plot
-metrics = ["avg_x", "avg_y", "avg_z", "q"]
-metric_labels = ["Average x", "Average y", "z", "Average q"]
+metrics = ["avg_x", "avg_y", "avg_z"]
+metric_labels = ["Average x", "Average y", "z"]
 
 # Plot each binned dataset
 for idx, (df, title) in enumerate(zip(binned_dataframes, titles)):
     for j, (metric, label) in enumerate(zip(metrics, metric_labels)):
-        plt.subplot(3, 4, idx * 4 + j + 1)  # 3 rows, 4 columns
+        plt.subplot(3, 3, idx * 3 + j + 1)  # 3 rows, 3 columns
         plt.bar(df["bin_start"], df[metric], width=1.0, color="blue", alpha=0.6)
         plt.xlabel("z (Position)")
         plt.ylabel(label)

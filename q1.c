@@ -33,8 +33,9 @@ double random_number_with_mapping(int64_t *random_parameters, double lower_bound
     double normalised = (double)(*seed) / (double)(*m);
     return (normalised * (upper_bound - lower_bound)) + lower_bound;
 }
+
 /**
- * Generate a lookup array based on a given function (or 2)
+ * Generate a lookup array based on a given function (or 3!)
  * @param params an array consisting of Table size, start value, finish value
  * @param filename Name of the file, Note: remeber to include .csv in the file name
  * @param compute_value1 Compute the corrosponding value for the 2nd column
@@ -76,6 +77,7 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
                                                 &lookup_array[i * columns + 3]);
             if (count != columns)
             {
+                // Error sanity check. probably could include more error checking.
                 printf("ERROR: fscanf matching error in %s on line %d\n", filename, i);
                 fclose(lookup_file);
                 remove(filename);
@@ -88,12 +90,14 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         return lookup_array;
     }
 
-    // Otherwise, create a new file and generate the lookup table
+    // No file already present, time to make one.
     lookup_file = fopen(filename, "w");
 
-    // First iteration handle seperately, due to initial value tomfoolery.
+    // First iteration handle seperately, As I am treating this as an intial value problem?
     lookup_array[0] = initial_value;
     lookup_array[1] = compute_value1(lookup_array[0]);
+
+    // Probably should make this work for N columns and pass in an array containing pointers to functions, but got to call it quits somewhere
     if (columns == 4)
     {
         lookup_array[2] = compute_value2(lookup_array[0], lookup_array[1]);
@@ -113,7 +117,7 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         // Compute the corresponding y value using the first function
         lookup_array[i * columns + 1] = compute_value1(lookup_array[i * columns]);
 
-        // If a second function is provided, compute the corresponding value in the third column
+        // If a second function is provided, compute the corresponding value in the third and fourth column
         if (columns == 4)
         {
             lookup_array[i * columns + 2] = compute_value2(lookup_array[i * columns], lookup_array[i * columns + 1]);
@@ -122,6 +126,7 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         }
         else
         {
+            // if not then just working with one column and one function.
             fprintf(lookup_file, "%lf,%lf\n", lookup_array[i * columns], lookup_array[i * columns + 1]);
         }
     }
@@ -131,12 +136,15 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
     return lookup_array;
 }
 
+//// LIST OF FUNCTIONS THAT WILL BE PASSED INTO LOOKUP TABLE ////
+
 // The inverse culumitive distribution function for y
 double calculate_y_from_mu(double mu)
 {
     return (pow(mu, 3) + 3 * mu + 4) * 0.125;
 }
 
+// Get z from a ranom variable u, see report for derivation
 double calculate_z_from_u(double u)
 {
     // Deal with square root of 1.
@@ -147,7 +155,7 @@ double calculate_z_from_u(double u)
 
 /**
  * Compute y using a deterministic azimuthal angle
- * @param u A value in range [-2, 2]
+ * @param u A value in range [-1, 1]
  * @param z The calculated z-coordinate
  * @return y-coordinate on the sphere
  */
@@ -160,7 +168,7 @@ double calculate_y_from_u_and_z(double u, double z)
 
 /**
  * Compute x using a deterministic azimuthal angle
- * @param u A value in range [-2, 2]
+ * @param u A value in range [-1, 1]
  * @param z The calculated z-coordinate
  * @return x-coordinate on the sphere
  */
@@ -170,10 +178,18 @@ double calculate_x_from_u_and_z(double u, double z)
     double r = sqrt(1.0 - z * z); // Radius at that z slice
     return r * cos(phi);
 }
+
+double calculate_b_from_c(double c)
+{
+    return (4 - pow(c, 3) - 3 * c) * 0.125;
+}
+
+//// LIST OF THE DIFFERENT BINARY SEARCHES USED ////
+
 void binary_search_2_columns(double y, const double *lookup_table, int32_t size_of_table, double *mu)
 {
     // set boundaries at the extremes of the table
-    int32_t low = 0, high = size_of_table;
+    int32_t low = 0, high = size_of_table - 1;
 
     while (low <= high)
     {
@@ -181,6 +197,29 @@ void binary_search_2_columns(double y, const double *lookup_table, int32_t size_
         double mid_y = lookup_table[2 * mid + 1];
 
         if (mid_y < y)
+        {
+            low = mid + 1;
+        }
+        else
+        {
+            high = mid - 1;
+        }
+    }
+
+    // Take the midpoint of the two closest mu values
+    *mu = (lookup_table[2 * high] + lookup_table[2 * low]) * 0.5;
+}
+void binary_search_2_columns_descending(double y, const double *lookup_table, int32_t size_of_table, double *mu)
+{
+    // set boundaries at the extremes of the table
+    int32_t low = 0, high = size_of_table - 1;
+
+    while (low <= high)
+    {
+        int32_t mid = low + (high - low) / 2;
+        double mid_y = lookup_table[2 * mid + 1];
+
+        if (mid_y > y)
         {
             low = mid + 1;
         }
@@ -211,6 +250,47 @@ void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_tab
 
     // update the memory addresses directly
     *dz = (lookup_table[4 * low + 1] + lookup_table[4 * high + 1]) * 0.5;
+    *dy = (lookup_table[4 * low + 2] + lookup_table[4 * high + 2]) * 0.5;
+    *dx = (lookup_table[4 * low + 3] + lookup_table[4 * high + 3]) * 0.5;
+}
+void binary_search_b(double b, double *lookup_table, int32_t size_of_table, double *dy, double *dx)
+{
+    int32_t low, high, mid, ascending;
+
+    // printf("b %lf \n", b);
+
+    // Determine the search range and order based on the sign of b
+    if (b >= 0)
+    {
+        // Search the upper half of the table (positive b) in ascending order
+        low = size_of_table / 2 + 1;
+        high = size_of_table - 1;
+        ascending = 0;
+    }
+    else
+    {
+        // Search the lower half of the table (negative b) in descending order
+        low = 0;
+        high = size_of_table / 2 - 1;
+        ascending = 1;
+    }
+
+    // Binary search depending on where b is
+    while (low <= high)
+    {
+        mid = low + (high - low) / 2;
+        double mid_b = lookup_table[4 * mid + 1];
+
+        if (mid_b < b)
+            low = mid + 1;
+        else
+            high = mid - 1;
+    }
+
+    // printf("index of low = %d \n", low);
+    // printf(" the new y = %lf \n", lookup_table[4 * low + 2]);
+
+    // Update dy and dx based on the closest match
     *dy = (lookup_table[4 * low + 2] + lookup_table[4 * high + 2]) * 0.5;
     *dx = (lookup_table[4 * low + 3] + lookup_table[4 * high + 3]) * 0.5;
 }
@@ -332,21 +412,40 @@ void cross_product(double v1[3], double v2[3], double result[3])
     result[2] = v1[0] * v2[1] - v1[1] * v2[0];
 }
 
-// Rotate a vector around an axis by a given angle
-void rotate_vector(double v[3], double axis[3], double angle)
+// Rotate a vector around an axis by a given angle using Rodrigues' rotation formula
+void rotate_vector(double *v, const double axis[3], double angle)
 {
-    normalise(axis);
+    // Normalize the axis vector
+    double norm = sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+    if (norm == 0.0)
+        printf(" division by zero was about to occur tut tut tut ");
+    return; // Avoid division by zero
+    double x = axis[0] / norm;
+    double y = axis[1] / norm;
+    double z = axis[2] / norm;
 
-    // Rodrigues' rotation formula
-    double dot = dot_product(v, axis);
-    double cross[3];
-    cross_product(v, axis, cross);
+    // Compute trigonometric values
+    double c = cos(angle);
+    double s = sin(angle);
+    double one_minus_c = 1 - c;
 
-    // Apply rotation
-    for (int i = 0; i < 3; i++)
-    {
-        v[i] = v[i] * cos(angle) + cross[i] * sin(angle) + axis[i] * dot * (1 - cos(angle));
-    }
+    // Compute the dot product of v and axis
+    double dot = v[0] * x + v[1] * y + v[2] * z;
+
+    // Compute the cross product of axis and v
+    double cross_x = y * v[2] - z * v[1];
+    double cross_y = z * v[0] - x * v[2];
+    double cross_z = x * v[1] - y * v[0];
+
+    // Apply Rodrigues' rotation formula
+    double new_v0 = v[0] * c + cross_x * s + x * dot * one_minus_c;
+    double new_v1 = v[1] * c + cross_y * s + y * dot * one_minus_c;
+    double new_v2 = v[2] * c + cross_z * s + z * dot * one_minus_c;
+
+    // Store the rotated values back into v
+    v[0] = new_v0;
+    v[1] = new_v1;
+    v[2] = new_v2;
 }
 
 // Does the photon scatter or not
@@ -381,9 +480,9 @@ void photon_scattering(int64_t total_photon_count,
     binned_position_results = fopen(binned_position_file_name, "w");
 
     // I should only do this if Rayleigh scattering, ah well.
-    int32_t size_of_scattering_table = 25000;
+    int32_t size_of_scattering_table = 500;
     int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -1, 1};
-    double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "rayleigh_scattering_lookup.csv", *calculate_y_from_mu, NULL, NULL);
+    double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "rayleigh_scattering_lookup.csv", *calculate_b_from_c, NULL, NULL);
 
     // Angle-based binning setup
     int32_t angle_bin_counts[number_of_angle_bins];
@@ -396,14 +495,14 @@ void photon_scattering(int64_t total_photon_count,
     int32_t y_bin_counts[number_of_position_bins];
     int32_t z_bin_counts[number_of_position_bins];
     int32_t q_bin_counts[number_of_position_bins];
+
     // Set up the angle bins for equal solid angle
     for (int i = 0; i <= number_of_angle_bins; i++)
     {
-        double fraction = (double)i / number_of_angle_bins;
-        angle_bin_edges[i] = acos(1.0 - fraction);
+        angle_bin_edges[i] = (pi / 2) * (double)i / number_of_angle_bins;
     }
 
-    // Initialize bin counts
+    // Initialise bin counts
     for (int i = 0; i < number_of_angle_bins; i++)
     {
         angle_bin_counts[i] = 0;
@@ -422,6 +521,7 @@ void photon_scattering(int64_t total_photon_count,
         position_bin_edges[i] = -2000 + i * position_bin_width;
     }
 
+    // Got to initialise things otherwise stuff in the csv will be left as a NaN,
     for (int32_t i = 0; i < number_of_position_bins; i++)
     {
         x_bin_counts[i] = 0;
@@ -430,21 +530,24 @@ void photon_scattering(int64_t total_photon_count,
         q_bin_counts[i] = 0;
     }
 
+    // Variable to accumulate total q
+    int32_t total_q = 0;
+
 #pragma omp parallel for
     for (int32_t i = 0; i < total_photon_count; i++)
     {
+    generate_photon:
         // Initial values
         double position[3] = {0, 0, 0};  // [x, y, z]
         double direction[3] = {0, 0, 0}; // [dx, dy, dz]
-        double t = 0, u = 0, theta = 0, theta_displacement = 0, theta_lab = 0;
+        double t = 0, u = 0, b = 0, theta = 0;
         int32_t q = 0;
         double b_vector[3] = {0, 0, 0};
 
         // Start it towards the z direction if Rayleigh scattering, and also initialize 2 more vectors
-        if (do_rayleigh_scattering)
+        if (do_rayleigh_scattering == 1)
         {
             position[2] += -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
-            theta = 1;
             if (!photon_scatters(absorption_probability, random_parameters))
                 continue;
         }
@@ -452,42 +555,39 @@ void photon_scattering(int64_t total_photon_count,
         // Loop until photon escapes
         while (position[2] >= 0 && position[2] <= escape_z)
         {
-            if (do_rayleigh_scattering)
+            // Calculate the distance travelled using a direct map
+            if (!photon_scatters(absorption_probability, random_parameters))
+                continue;
+
+            if (do_rayleigh_scattering == 1)
             {
-                if (!photon_scatters(absorption_probability, random_parameters))
-                    continue;
-                // Find what u is meant to be
-                double b = random_number_with_mapping(random_parameters, 0, 1);
-                binary_search_2_columns(b, scattering_lookup_array, size_of_scattering_table, &theta_displacement);
-
-                b_vector[0] = position[0];
-                b_vector[1] = position[1];
-                b_vector[2] = position[2];
+                // Find what c is, this is the same as the new angle as c = cos (theta ^ hat)
+                double c = random_number_with_mapping(random_parameters, 0, 1);
+                binary_search_2_columns_descending(c, scattering_lookup_array, size_of_scattering_table, &b);
+                // Use the old position vector as the new direction vector
+                double b_vector[3] = {position[0], position[1], position[2]};
                 normalise(b_vector);
-                multiply_vector(b_vector, theta_displacement);
 
-                // Calculate the angle between b_vector and the z-axis.
+                // Get the magnitude based on b (no need for cross product or angle calculation)
+                multiply_vector(b_vector, b);
+
+                // Set up the rotation axis (cross product with z-axis)
                 double z_axis[3] = {0, 0, 1};
-                double dot = dot_product(b_vector, z_axis);
-                double angle = acos(dot);
-
-                // Calculate the rotation axis (cross product of b_vector and z-axis).
-                double rotation_axis[3];
-                cross_product(b_vector, z_axis, rotation_axis);
+                double rotation_axis[3] = {0, 0, 0};
+                cross_product(position, z_axis, rotation_axis);
                 normalise(rotation_axis);
 
+                // Update the direction vector (use the new displacement direction)
+                binary_search_b(b, displacement_lookup_array, size_of_displacement_table, &direction[1], &direction[0]);
+                direction[2] = b;
+
                 // Rotate the direction vector
-                rotate_vector(direction, rotation_axis, angle);
+                double heta = acos(dot_product(b_vector, z_axis));
 
-                // Technically I could always work in terms of u but I think this is more readable.
-                u = theta_displacement;
+                rotate_vector(direction, rotation_axis, heta);
 
-                // Pass in the memory address of direction array to update dx, dy, dz
-                binary_search_4_columns(u, displacement_lookup_array, size_of_displacement_table, &direction[0], &direction[1], &direction[2]);
-
-                // Calculate the distance travelled using a direct map
+                // Update the position based on the direction
                 t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
-
                 position[0] += direction[0] * t;
                 position[1] += direction[1] * t;
                 position[2] += direction[2] * t;
@@ -495,16 +595,11 @@ void photon_scattering(int64_t total_photon_count,
             }
             else
             {
+                t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
                 u = random_number_with_mapping(random_parameters, -1, 1);
 
                 // Pass in the memory address of direction array to update dx, dy, dz
                 binary_search_4_columns(u, displacement_lookup_array, size_of_displacement_table, &direction[2], &direction[1], &direction[0]);
-
-                // Calculate the distance travelled using a direct map
-                t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
-
-                if (!photon_scatters(absorption_probability, random_parameters))
-                    continue;
 
                 position[2] += direction[2] * t;
                 position[1] += direction[1] * t;
@@ -514,43 +609,47 @@ void photon_scattering(int64_t total_photon_count,
         }
 
         if (position[2] < 0)
-        {
-            --i;
-            continue;
-        }
+            // While I could just decrement the index this is more thread safe
+            goto generate_photon;
 
+// Add the q value to the total
+#pragma omp atomic update
+        total_q += q;
+
+        // int manipulation so division isn't too bad
         int32_t x_bin_index = (int32_t)(position[0] + 2000);
         int32_t y_bin_index = (int32_t)(position[1] + 2000);
         int32_t z_bin_index = (int32_t)(position[2] + 2000);
-        theta_lab = atan(position[1] / escape_z);
 
-        // #pragma omp critical
+        // Angle-based binning
+        theta = atan(position[1] / escape_z);
+        int32_t angle_bin_index = find_bin_index(theta, angle_bin_edges, number_of_angle_bins);
+
+// Use atomic increment for angle bin counts
+#pragma omp atomic update
+        angle_bin_counts[angle_bin_index]++;
+
+        // Position-based binning using atomic increment
+        if (x_bin_index >= 0 && x_bin_index < number_of_position_bins)
         {
-            // Angle-based binning
-            int32_t angle_bin_index = find_bin_index(theta_lab, angle_bin_edges, number_of_angle_bins);
-            angle_bin_counts[angle_bin_index]++;
-
-            // Position-based binning.
-            if (x_bin_index >= 0 && x_bin_index < number_of_position_bins)
-            {
-                x_bin_counts[x_bin_index]++;
-            }
-            if (y_bin_index >= 0 && y_bin_index < number_of_position_bins)
-            {
-                y_bin_counts[y_bin_index]++;
-            }
-            if (z_bin_index >= 0 && z_bin_index < number_of_position_bins)
-            {
-                z_bin_counts[z_bin_index]++;
-            }
-
-            // Use z_bin_index for q counts (or adjust as needed)
-            if (z_bin_index >= 0 && z_bin_index < number_of_position_bins)
-            {
-                q_bin_counts[z_bin_index] += q;
-            }
+#pragma omp atomic update
+            x_bin_counts[x_bin_index]++;
+        }
+        if (y_bin_index >= 0 && y_bin_index < number_of_position_bins)
+        {
+#pragma omp atomic update
+            y_bin_counts[y_bin_index]++;
+        }
+        if (z_bin_index >= 0 && z_bin_index < number_of_position_bins)
+        {
+#pragma omp atomic update
+            z_bin_counts[z_bin_index]++;
         }
     }
+
+    // Calculate and print the average q
+    double average_q = (double)total_q / total_photon_count;
+    printf("Average q: %lf\n", average_q);
 
     for (int32_t i = 0; i < number_of_angle_bins; i++)
     {

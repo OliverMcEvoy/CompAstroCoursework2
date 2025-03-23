@@ -19,11 +19,7 @@ fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(111, projection="3d")
 
 # Scatter plot with color based on mu
-sc = ax.scatter(x, y, z, c=mu, cmap="viridis", marker="o")
-
-# Add color bar
-cbar = plt.colorbar(sc, ax=ax, shrink=0.6, aspect=10)
-cbar.set_label("mu value")
+sc = ax.scatter(x, y, z, marker="o", s=3)
 
 # Labels and title
 ax.set_xlabel("X")
