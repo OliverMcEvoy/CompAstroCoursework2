@@ -25,8 +25,8 @@ sc = ax.scatter(x, y, z, marker="o", s=3)
 ax.set_xlabel("X")
 ax.set_ylabel("Y")
 ax.set_zlabel("Z")
-ax.set_title("3D Scatter Plot on Unit Sphere")
 ax.set_aspect("equal")
 
 # Show plot
+plt.savefig("sphere.png")
 plt.show()

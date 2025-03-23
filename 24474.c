@@ -147,10 +147,11 @@ double calculate_y_from_mu(double mu)
 // Get z from a ranom variable u, see report for derivation
 double calculate_z_from_u(double u)
 {
-    // Deal with square root of 1.
-    if (u > 0.99999)
-        return 1.0;
-    return copysign(1.0 - sqrt(1.0 - u * u), u);
+    // // Deal with square root of 1.
+    // if (u > 0.99999)
+    //     return 1.0;
+    // return copysign(1.0 - sqrt(1.0 - u * u), u);
+    return 2 * u - 1;
 }
 
 /**
@@ -161,8 +162,8 @@ double calculate_z_from_u(double u)
  */
 double calculate_y_from_u_and_z(double u, double z)
 {
-    double phi = 50.0 * pi * u;   // Deterministic azimuthal angle
-    double r = sqrt(1.0 - z * z); // Radius at that z slice
+    double phi = 250.0 * pi * u;
+    double r = sqrt(1.0 - z * z);
     return r * sin(phi);
 }
 
@@ -174,15 +175,16 @@ double calculate_y_from_u_and_z(double u, double z)
  */
 double calculate_x_from_u_and_z(double u, double z)
 {
-    double phi = 50.0 * pi * u;   // Deterministic azimuthal angle
-    double r = sqrt(1.0 - z * z); // Radius at that z slice
+    double phi = 250.0 * pi * u;
+    double r = sqrt(1.0 - z * z);
     return r * cos(phi);
 }
 
-double calculate_b_from_c(double c)
-{
-    return (4 - pow(c, 3) - 3 * c) * 0.125;
-}
+// not needed anymore see report
+// double calculate_b_from_c(double c)
+// {
+//     return (4 - pow(c, 3) - 3 * c) * 0.125;
+// }
 
 //// LIST OF THE DIFFERENT BINARY SEARCHES USED ////
 
@@ -209,29 +211,7 @@ void binary_search_2_columns(double y, const double *lookup_table, int32_t size_
     // Take the midpoint of the two closest mu values
     *mu = (lookup_table[2 * high] + lookup_table[2 * low]) * 0.5;
 }
-void binary_search_2_columns_descending(double y, const double *lookup_table, int32_t size_of_table, double *mu)
-{
-    // set boundaries at the extremes of the table
-    int32_t low = 0, high = size_of_table - 1;
 
-    while (low <= high)
-    {
-        int32_t mid = low + (high - low) / 2;
-        double mid_y = lookup_table[2 * mid + 1];
-
-        if (mid_y > y)
-        {
-            low = mid + 1;
-        }
-        else
-        {
-            high = mid - 1;
-        }
-    }
-
-    // Take the midpoint of the two closest mu values
-    *mu = (lookup_table[2 * high] + lookup_table[2 * low]) * 0.5;
-}
 // I think this function is distinct enough to warrent its existance. but I think the functionality of binary_search_2_columns could be rewrote to maybe be a more general lookup taking X pointers in or something
 // TODO: See comment above? maybe, not sure if its the most important thing in the world, and there is other piorities first.
 void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_table, double *dz, double *dy, double *dx)
@@ -294,13 +274,7 @@ void binary_search_b(double b, double *lookup_table, int32_t size_of_table, doub
     *dy = (lookup_table[4 * low + 2] + lookup_table[4 * high + 2]) * 0.5;
     *dx = (lookup_table[4 * low + 3] + lookup_table[4 * high + 3]) * 0.5;
 }
-// // See report for derivation. NOT NEEDED ANYMORE THANK GOD
-// double calculate_b_from_theta(double theta)
-// {
-//     // 2 theta * 1/2pi sin(4 pi theta). I dislike doing division in C, but the generation of the lookup table is not a bottle neck one bit so ah well.
-//     // Also its an odd function so it functions as intended whenever theta < 0
-//     return 2 * theta + (double)(1 / (2 * pi)) * sin(4 * pi * theta);
-// }
+
 /**
  * Function to calculate the probability of mu according to the given formula.
  * @param mu The input for which we want to calculate the probability.
@@ -415,7 +389,7 @@ void cross_product(double v1[3], double v2[3], double result[3])
 // Rotate a vector around an axis by a given angle using Rodrigues' rotation formula
 void rotate_vector(double *v, const double axis[3], double angle)
 {
-    // Normalize the axis vector
+    // Normalise the rotation axis vector, slightly different in functionality to the normalise function hence its not used here.
     double norm = sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
     if (norm == 0.0)
         printf(" division by zero was about to occur tut tut tut ");
@@ -425,22 +399,20 @@ void rotate_vector(double *v, const double axis[3], double angle)
     double z = axis[2] / norm;
 
     // Compute trigonometric values
-    double c = cos(angle);
-    double s = sin(angle);
-    double one_minus_c = 1 - c;
+    double cos_theta = cos(angle);
+    double sin_theta = sin(angle);
+    double one_minus_cos_theta = 1 - cos_theta;
 
-    // Compute the dot product of v and axis
     double dot = v[0] * x + v[1] * y + v[2] * z;
 
-    // Compute the cross product of axis and v
     double cross_x = y * v[2] - z * v[1];
     double cross_y = z * v[0] - x * v[2];
     double cross_z = x * v[1] - y * v[0];
 
-    // Apply Rodrigues' rotation formula
-    double new_v0 = v[0] * c + cross_x * s + x * dot * one_minus_c;
-    double new_v1 = v[1] * c + cross_y * s + y * dot * one_minus_c;
-    double new_v2 = v[2] * c + cross_z * s + z * dot * one_minus_c;
+    //  Rodrigues' rotation formula
+    double new_v0 = v[0] * cos_theta + cross_x * sin_theta + x * dot * one_minus_cos_theta;
+    double new_v1 = v[1] * cos_theta + cross_y * sin_theta + y * dot * one_minus_cos_theta;
+    double new_v2 = v[2] * cos_theta + cross_z * sin_theta + z * dot * one_minus_cos_theta;
 
     // Store the rotated values back into v
     v[0] = new_v0;
@@ -470,7 +442,7 @@ void photon_scattering(int64_t total_photon_count,
 {
     // Size of table, start value, final value
     int32_t size_of_displacement_table = 25000, number_of_angle_bins = 10, number_of_position_bins = 4000;
-    int32_t lookup_table_params[3] = {size_of_displacement_table, -1, 1};
+    int32_t lookup_table_params[3] = {size_of_displacement_table, 0, 1};
 
     double escape_z = 200;
     double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *calculate_z_from_u, *calculate_y_from_u_and_z, *calculate_x_from_u_and_z);
@@ -482,19 +454,20 @@ void photon_scattering(int64_t total_photon_count,
     // I should only do this if Rayleigh scattering, ah well.
     int32_t size_of_scattering_table = 500;
     int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -1, 1};
-    double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "rayleigh_scattering_lookup.csv", *calculate_b_from_c, NULL, NULL);
+    double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "rayleigh_scattering_lookup.csv", *calculate_y_from_mu, NULL, NULL);
 
-    // Angle-based binning setup
-    int32_t angle_bin_counts[number_of_angle_bins];
-    double angle_bin_edges[number_of_angle_bins + 1], angle_bin_midpoints[number_of_angle_bins], angle_bin_intensity[number_of_angle_bins];
+    // Angle-based binning setup using malloc for dynamic allocation
+    int32_t *angle_bin_counts = malloc(number_of_angle_bins * sizeof(int32_t));
+    double *angle_bin_edges = malloc((number_of_angle_bins + 1) * sizeof(double));
+    double *angle_bin_midpoints = malloc(number_of_angle_bins * sizeof(double));
+    double *angle_bin_intensity = malloc(number_of_angle_bins * sizeof(double));
 
-    double position_bin_edges[number_of_position_bins + 1];
-
-    // Counts for x, y, z, and q
-    int32_t x_bin_counts[number_of_position_bins];
-    int32_t y_bin_counts[number_of_position_bins];
-    int32_t z_bin_counts[number_of_position_bins];
-    int32_t q_bin_counts[number_of_position_bins];
+    // Position-based binning setup using malloc
+    double *position_bin_edges = malloc((number_of_position_bins + 1) * sizeof(double));
+    int32_t *x_bin_counts = malloc(number_of_position_bins * sizeof(int32_t));
+    int32_t *y_bin_counts = malloc(number_of_position_bins * sizeof(int32_t));
+    int32_t *z_bin_counts = malloc(number_of_position_bins * sizeof(int32_t));
+    int32_t *q_bin_counts = malloc(number_of_position_bins * sizeof(int32_t));
 
     // Set up the angle bins for equal solid angle
     for (int i = 0; i <= number_of_angle_bins; i++)
@@ -521,7 +494,7 @@ void photon_scattering(int64_t total_photon_count,
         position_bin_edges[i] = -2000 + i * position_bin_width;
     }
 
-    // Got to initialise things otherwise stuff in the csv will be left as a NaN,
+    // Initialize position-based bin counts to zero
     for (int32_t i = 0; i < number_of_position_bins; i++)
     {
         x_bin_counts[i] = 0;
@@ -563,7 +536,7 @@ void photon_scattering(int64_t total_photon_count,
             {
                 // Find what c is, this is the same as the new angle as c = cos (theta ^ hat)
                 double c = random_number_with_mapping(random_parameters, 0, 1);
-                binary_search_2_columns_descending(c, scattering_lookup_array, size_of_scattering_table, &b);
+                binary_search_2_columns(c, scattering_lookup_array, size_of_scattering_table, &b);
                 // Use the old position vector as the new direction vector
                 double b_vector[3] = {position[0], position[1], position[2]};
                 normalise(b_vector);
@@ -596,7 +569,7 @@ void photon_scattering(int64_t total_photon_count,
             else
             {
                 t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
-                u = random_number_with_mapping(random_parameters, -1, 1);
+                u = random_number_with_mapping(random_parameters, 0, 1);
 
                 // Pass in the memory address of direction array to update dx, dy, dz
                 binary_search_4_columns(u, displacement_lookup_array, size_of_displacement_table, &direction[2], &direction[1], &direction[0]);
@@ -649,7 +622,7 @@ void photon_scattering(int64_t total_photon_count,
 
     // Calculate and print the average q
     double average_q = (double)total_q / total_photon_count;
-    printf("Average q: %lf\n", average_q);
+    printf("Average scattering events: %lf\n", average_q);
 
     for (int32_t i = 0; i < number_of_angle_bins; i++)
     {
@@ -665,8 +638,20 @@ void photon_scattering(int64_t total_photon_count,
     }
     fclose(binned_position_results);
 
+    // Free dynamically allocated memory for lookup arrays
     free(displacement_lookup_array);
     free(scattering_lookup_array);
+
+    // Free memory allocated for binning arrays
+    free(angle_bin_counts);
+    free(angle_bin_edges);
+    free(angle_bin_midpoints);
+    free(angle_bin_intensity);
+    free(position_bin_edges);
+    free(x_bin_counts);
+    free(y_bin_counts);
+    free(z_bin_counts);
+    free(q_bin_counts);
 }
 // Time Macro as the code was getting a bit messy doing this at the start and end of every function.
 #define MEASURE_TIME(func, ...) ({                                                                  \
