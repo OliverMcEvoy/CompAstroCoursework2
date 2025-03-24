@@ -42,7 +42,7 @@ for idx, (df, title) in enumerate(zip(binned_dataframes, titles)):
         plt.bar(df["bin_start"], df[metric], width=1.0, color="blue", alpha=0.6)
         plt.xlabel("z (Position)")
         plt.ylabel(label)
-        plt.xlim(-2000, 2000)  # Adjust based on your data range
+        plt.xlim(-500, 500)  # Adjust based on your data range
 
 plt.tight_layout()
 plt.savefig("binned_position_analysis.png")

@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # # Get data.
-# data = pd.read_csv("efficient_results.csv", names=["mu", "y"])
-data = pd.read_csv("displacement_direction_lookup.csv", names=["k", "mu", "y", "x"])
+data = pd.read_csv("efficient_results.csv", names=["mu", "y"])
+# data = pd.read_csv("displacement_direction_lookup.csv", names=["k", "mu", "y", "x"])
 
 mu_values = data["mu"]
 y_values = data["y"]

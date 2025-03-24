@@ -48,8 +48,8 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
 {
     // Extract the parameters from the array
     int32_t length_of_array = params[0];
-    double initial_value = params[1];
-    double final_value = params[2];
+    double initial_value = (double)params[1];
+    double final_value = (double)params[2];
 
     // Open the file in read mode to load a previously saved table
     FILE *lookup_file = fopen(filename, "r");
@@ -86,7 +86,9 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
             }
         }
         fclose(lookup_file);
-        printf("Loading table %s\n", filename);
+
+        // typically if each question was isolated I would have this printed, but with the amount of lookup tables it didn't seem practical
+        // printf("Loading table %s\n", filename);
         return lookup_array;
     }
 
@@ -130,7 +132,9 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
             fprintf(lookup_file, "%lf,%lf\n", lookup_array[i * columns], lookup_array[i * columns + 1]);
         }
     }
-    printf("Done generating lookup table, saved to %s\n", filename);
+
+    // typically if each question was isolated I would have this printed, but with the amount of lookup tables it didn't seem practical
+    // printf("Done generating lookup table, saved to %s\n", filename);
     fclose(lookup_file);
 
     return lookup_array;
@@ -162,7 +166,7 @@ double calculate_z_from_u(double u)
  */
 double calculate_y_from_u_and_z(double u, double z)
 {
-    double phi = 250.0 * pi * u;
+    double phi = 1500.0 * pi * u;
     double r = sqrt(1.0 - z * z);
     return r * sin(phi);
 }
@@ -175,12 +179,12 @@ double calculate_y_from_u_and_z(double u, double z)
  */
 double calculate_x_from_u_and_z(double u, double z)
 {
-    double phi = 250.0 * pi * u;
+    double phi = 1500.0 * pi * u;
     double r = sqrt(1.0 - z * z);
     return r * cos(phi);
 }
 
-// not needed anymore see report
+// not needed anymore see report!
 // double calculate_b_from_c(double c)
 // {
 //     return (4 - pow(c, 3) - 3 * c) * 0.125;
@@ -287,62 +291,142 @@ double probability_of_mu(double mu)
 }
 /**
  * Function to perform rejection sampling according to the given parameters.
+ *
  * @param num_samples The number of samples to generate.
  * @param seed Initial seed for random number generator.
  * @param a, c, m Parameters for the random number generator.
- * @param to_low, to_high Mapping range for random numbers.
  */
-void rejection_sampling(int32_t num_samples, int64_t *random_parameters, double to_low, double to_high)
+void rejection_sampling(int32_t num_samples, int64_t *random_parameters)
 {
-    FILE *rejection_method_results;
-    if ((rejection_method_results = fopen("results.csv", "w")) == NULL)
-    {
-        printf("Error opening file!\n");
-    }
+    // Create 100 bins for mu values between -1 and 1
+    int32_t num_bins = 100;
 
-    for (int32_t i = 0; i < num_samples; i++)
+    // Calloc used as technically a non zero chance a value will not fall into a bin.
+    int32_t *bins = calloc(num_bins, sizeof(int32_t));
+    double min_mu = -1.0;
+    double max_mu = 1.0;
+    double bin_width = (max_mu - min_mu) / num_bins;
+
+    FILE *rejection_method_results = fopen("rejection_sampling_binned_results.csv", "w");
+
+    // Increment until the total samples are reached.
+    int32_t accepted_count = 0;
+    while (accepted_count < num_samples)
     {
+        // Get mu and other values.
         double mu = random_number_with_mapping(random_parameters, -1, 1);
         double prob_mu = probability_of_mu(mu);
+        double acceptance_threshold = random_number_with_mapping(random_parameters, 0, 1);
 
-        double acception_threshold = random_number_with_mapping(random_parameters, 0, 1);
+        // logic if the mu is accepted
+        if (acceptance_threshold <= prob_mu)
+        {
+            // Bin the accepted sample
+            int32_t bin_index = (int32_t)((mu - min_mu) / bin_width);
 
-        // Ensure that enough accepted samples are gotten
-        if (acception_threshold > prob_mu)
-            --i;
+            bins[bin_index]++;
+            accepted_count++;
+        }
+    }
 
-        fprintf(rejection_method_results, "%f,%s\n", mu, acception_threshold < prob_mu ? "accepted" : "rejected");
+    // Write bin results to file
+    for (int32_t i = 0; i < num_bins; i++)
+    {
+        double bin_start = min_mu + i * bin_width;
+        double bin_end = bin_start + bin_width;
+        double normalized_value = (double)bins[i] / num_samples * (double)num_bins * 0.5;
+        fprintf(rejection_method_results, "%f,%f,%f\n", bin_start, bin_end, normalized_value);
     }
 
     fclose(rejection_method_results);
+    free(bins);
 }
 
-// The logic for generating random numbers using direct mapping and a lookup table
-void direct_mapping(int32_t number_of_samples, int64_t *random_parameters)
+/**
+ * Generate a random distribtion via direct mapping
+ *
+ * @param number_of_samples This is the amount of samples taken.
+ * @param random_parameters A pointer to the random parameters used for the random number generator.
+ * @param output_filename The name of the file to save in.
+ */
+void direct_mapping(int32_t number_of_samples, int64_t *random_parameters, const char *output_filename)
 {
-
-    int32_t lookup_table_params[3] = {2000, -1, 1};
+    int32_t lookup_table_params[3] = {201, -1, 1};
     double *y_to_mu_lookup_array = generate_lookup_array(lookup_table_params, "y_to_mu_lookup.csv", *calculate_y_from_mu, NULL, NULL);
 
-    double y, mu;
-    FILE *efficient_results;
-    efficient_results = fopen("efficient_results.csv", "w");
+    // Create 100 bins for mu values between -1 and 1.
+    int32_t num_bins = 100;
+    // Theres 'technically' no gaurentee each bin will get filled. esp if a low number of samples are used, so Ill use calloc
+    int32_t *bins = calloc(num_bins, sizeof(int32_t));
 
+    // Constants for binning.
+    const double min_mu = -1.0;
+    const double max_mu = 1.0;
+    const double mu_range = max_mu - min_mu;
+    const double bin_width = mu_range / num_bins;
+
+    double y, mu;
     for (int32_t i = 0; i < number_of_samples; i++)
     {
-
         y = random_number_with_mapping(random_parameters, 0, 1);
-
-        // As this is a 1D array, the accessing of the array is simply the row index i
         binary_search_2_columns(y, y_to_mu_lookup_array, lookup_table_params[0], &mu);
 
-        fprintf(efficient_results, "%f,%f\n", mu, y);
+        // Determine which bin this mu value falls into.
+        int32_t bin_index = (int32_t)((mu - min_mu) / bin_width);
+
+        // And update the index of the bin.
+        bins[bin_index]++;
+    }
+
+    FILE *efficient_results;
+    efficient_results = fopen(output_filename, "w");
+
+    // Write bin results to file.
+    for (int32_t i = 0; i < num_bins; i++)
+    {
+        double bin_start = min_mu + i * bin_width;
+        double bin_end = min_mu + (i + 1) * bin_width;
+        double normalized_value = (double)bins[i] / number_of_samples * (double)num_bins * 0.5;
+
+        fprintf(efficient_results, "%f,%f,%f\n", bin_start, bin_end, normalized_value);
     }
 
     fclose(efficient_results);
     free(y_to_mu_lookup_array);
+    free(bins);
 }
 
+/**
+ * Generate the expected probablity distribution of mu and save it as bins
+ */
+void save_expected_density_bins()
+{
+    const int num_bins = 100;
+    const double min_mu = -1.0;
+    const double max_mu = 1.0;
+    const double bin_width = (max_mu - min_mu) / num_bins;
+
+    FILE *file = fopen("expected_density_bins.csv", "w");
+    if (!file)
+    {
+        perror("Failed to create output file");
+        return;
+    }
+
+    // fprintf(file, "bin_start,bin_end,expected_density\n");
+
+    for (int i = 0; i < num_bins; i++)
+    {
+        double bin_start = min_mu + i * bin_width;
+        double bin_end = bin_start + bin_width;
+        double bin_center = (bin_start + bin_end) / 2.0;
+        double density = probability_of_mu(bin_center);
+
+        fprintf(file, "%f,%f,%f\n", bin_start, bin_end, density);
+    }
+
+    fclose(file);
+}
 // Function to find bin index based on theta
 int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of_bins)
 {
@@ -432,7 +516,7 @@ int32_t photon_scatters(double absorption_probability, int64_t *random_parameter
         return 0;
 }
 
-void photon_scattering(int64_t total_photon_count,
+void photon_scattering(int32_t total_photon_count,
                        int64_t *random_parameters,
                        int do_rayleigh_scattering,
                        double mean_free_path,
@@ -441,7 +525,7 @@ void photon_scattering(int64_t total_photon_count,
                        const char *binned_position_file_name)
 {
     // Size of table, start value, final value
-    int32_t size_of_displacement_table = 25000, number_of_angle_bins = 10, number_of_position_bins = 4000;
+    int32_t size_of_displacement_table = 50000, number_of_angle_bins = 10, number_of_position_bins = 4000;
     int32_t lookup_table_params[3] = {size_of_displacement_table, 0, 1};
 
     double escape_z = 200;
@@ -452,55 +536,43 @@ void photon_scattering(int64_t total_photon_count,
     binned_position_results = fopen(binned_position_file_name, "w");
 
     // I should only do this if Rayleigh scattering, ah well.
-    int32_t size_of_scattering_table = 500;
+    int32_t size_of_scattering_table = 15000;
     int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -1, 1};
     double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "rayleigh_scattering_lookup.csv", *calculate_y_from_mu, NULL, NULL);
 
-    // Angle-based binning setup using malloc for dynamic allocation
-    int32_t *angle_bin_counts = malloc(number_of_angle_bins * sizeof(int32_t));
+    // Note, whenever there is a possibility of a value being read later in the code, but it is not explicility set ( a non zero change it could be not defined) I will use calloc.
+    // calloc is not needed when everything is being set immediately.
+
+    // Angle-based binning.
+    int32_t *angle_bin_counts = calloc(number_of_angle_bins, sizeof(int32_t));
     double *angle_bin_edges = malloc((number_of_angle_bins + 1) * sizeof(double));
     double *angle_bin_midpoints = malloc(number_of_angle_bins * sizeof(double));
-    double *angle_bin_intensity = malloc(number_of_angle_bins * sizeof(double));
+    double *angle_bin_intensity = calloc(number_of_angle_bins, sizeof(double));
 
-    // Position-based binning setup using malloc
+    // Position-based binning.
     double *position_bin_edges = malloc((number_of_position_bins + 1) * sizeof(double));
-    int32_t *x_bin_counts = malloc(number_of_position_bins * sizeof(int32_t));
-    int32_t *y_bin_counts = malloc(number_of_position_bins * sizeof(int32_t));
-    int32_t *z_bin_counts = malloc(number_of_position_bins * sizeof(int32_t));
-    int32_t *q_bin_counts = malloc(number_of_position_bins * sizeof(int32_t));
+    int32_t *x_bin_counts = calloc(number_of_position_bins, sizeof(int32_t));
+    int32_t *y_bin_counts = calloc(number_of_position_bins, sizeof(int32_t));
+    int32_t *z_bin_counts = calloc(number_of_position_bins, sizeof(int32_t));
+    int32_t *q_bin_counts = calloc(number_of_position_bins, sizeof(int32_t));
 
     // Set up the angle bins for equal solid angle
     for (int i = 0; i <= number_of_angle_bins; i++)
     {
-        angle_bin_edges[i] = (pi / 2) * (double)i / number_of_angle_bins;
-    }
-
-    // Initialise bin counts
-    for (int i = 0; i < number_of_angle_bins; i++)
-    {
-        angle_bin_counts[i] = 0;
+        angle_bin_edges[i] = asin((double)i / number_of_angle_bins);
     }
 
     // Compute midpoints
-    for (int i = 0; i < number_of_angle_bins; i++)
+    for (int32_t i = 0; i < number_of_angle_bins; i++)
     {
         angle_bin_midpoints[i] = 0.5 * (angle_bin_edges[i] + angle_bin_edges[i + 1]);
     }
 
     // Set up the position bins and their edges
-    double position_bin_width = 1.0; // Each bin represents an integer range (e.g., -2000 to -1999, -1999 to -1998, etc.)
+    double position_bin_width = 1.0; // Each bin represents an int range
     for (int32_t i = 0; i <= number_of_position_bins; i++)
     {
         position_bin_edges[i] = -2000 + i * position_bin_width;
-    }
-
-    // Initialize position-based bin counts to zero
-    for (int32_t i = 0; i < number_of_position_bins; i++)
-    {
-        x_bin_counts[i] = 0;
-        y_bin_counts[i] = 0;
-        z_bin_counts[i] = 0;
-        q_bin_counts[i] = 0;
     }
 
     // Variable to accumulate total q
@@ -631,10 +703,17 @@ void photon_scattering(int64_t total_photon_count,
     }
     fclose(binned_angle_results);
 
-    // Write position-based binning results
     for (int32_t i = 0; i < number_of_position_bins; i++)
     {
-        fprintf(binned_position_results, "%lf,%lf,%d,%d,%d,%d\n", position_bin_edges[i], position_bin_edges[i + 1], x_bin_counts[i], y_bin_counts[i], z_bin_counts[i], q_bin_counts[i]);
+        // Normalise by diving by total photon count.
+        double x_bin_normalised = (double)x_bin_counts[i] / (double)total_photon_count;
+        double y_bin_normalised = (double)y_bin_counts[i] / (double)total_photon_count;
+        double z_bin_normalised = (double)z_bin_counts[i] / (double)total_photon_count;
+        double q_bin_normalised = (double)q_bin_counts[i] / (double)total_photon_count;
+
+        fprintf(binned_position_results, "%lf,%lf,%lf,%lf,%lf,%lf\n",
+                position_bin_edges[i], position_bin_edges[i + 1],
+                x_bin_normalised, y_bin_normalised, z_bin_normalised, q_bin_normalised);
     }
     fclose(binned_position_results);
 
@@ -654,13 +733,15 @@ void photon_scattering(int64_t total_photon_count,
     free(q_bin_counts);
 }
 // Time Macro as the code was getting a bit messy doing this at the start and end of every function.
-#define MEASURE_TIME(func, ...) ({                                                                  \
-    clock_t start = clock();                                                                        \
-    func(__VA_ARGS__);                                                                              \
-    clock_t end = clock();                                                                          \
-    double time_taken = (double)(end - start) / CLOCKS_PER_SEC;                                     \
-    printf("Total compute time across all threads used for %s: %.6f seconds\n", #func, time_taken); \
-    time_taken;                                                                                     \
+#define MEASURE_TIME(func, num_threads, ...) ({                                                              \
+    clock_t start = clock();                                                                                 \
+    func(__VA_ARGS__);                                                                                       \
+    clock_t end = clock();                                                                                   \
+    double thread_time = (double)(end - start) / CLOCKS_PER_SEC;                                             \
+    double total_time = thread_time / num_threads;                                                           \
+    printf("Total compute time for %s: %.6f seconds (%.6f seconds total compute time, %.0f threads used)\n", \
+           #func, total_time, thread_time, num_threads);                                                     \
+    thread_time;                                                                                             \
 })
 
 int main()
@@ -669,9 +750,13 @@ int main()
     int64_t rand_parameters[] = {seed, a, c, m};
 
     // Question 1
-    int32_t number_of_random_samples = 500000;
-    double time_rejection = MEASURE_TIME(rejection_sampling, number_of_random_samples, rand_parameters, 0, 3.14);
-    double time_direct = MEASURE_TIME(direct_mapping, number_of_random_samples, rand_parameters);
+    printf("\nQ1.\n");
+    // The expected density for comparison later
+    int32_t number_of_random_samples = 5000000;
+    save_expected_density_bins();
+
+    double time_rejection = MEASURE_TIME(rejection_sampling, 1.0, number_of_random_samples, rand_parameters);
+    double time_direct = MEASURE_TIME(direct_mapping, 1.0, number_of_random_samples, rand_parameters, "direct_mapping_binned_results_50000.csv");
 
     if (time_rejection < time_direct)
     {
@@ -682,15 +767,25 @@ int main()
         printf("direct_mapping was faster by %.6f seconds\n", time_rejection - time_direct);
     }
 
-    int32_t total_photon_count = 1000000;
+    // For the nice graph
+    direct_mapping(10000, rand_parameters, "direct_mapping_binned_results_10000.csv");
+    direct_mapping(2500, rand_parameters, "direct_mapping_binned_results_2500.csv");
+
+    printf("\nQ2.\n");
 
     // Question 2
-    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon_bins.csv", "photon_position_bins.csv");
+
+    double thread_count = (double)omp_get_max_threads();
+    int32_t total_photon_count = 1000000;
+    MEASURE_TIME(photon_scattering, thread_count, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon_bins.csv", "photon_position_bins.csv");
 
     // Question 3
-    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 200 / 10, 0, "rayleigh_blue_bins.csv", "rayleigh_blue_position_bins.csv");
+    printf("\nQ3.\n");
+    printf("Blue light\n");
+    MEASURE_TIME(photon_scattering, thread_count, total_photon_count, rand_parameters, 1, 200 / 10, 0, "rayleigh_blue_bins.csv", "rayleigh_blue_position_bins.csv");
+    printf("\nOther colours\n");
+    MEASURE_TIME(photon_scattering, thread_count, total_photon_count, rand_parameters, 1, 200 / 0.1, 0, "rayleigh_other_bins.csv", "rayleigh_other_position_bins.csv");
 
-    MEASURE_TIME(photon_scattering, total_photon_count, rand_parameters, 1, 200 / 0.1, 0, "rayleigh_other_bins.csv", "rayleigh_other_position_bins.csv");
-
+    printf("\n");
     return 0;
 }
