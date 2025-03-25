@@ -4,13 +4,15 @@
 #include <stdint.h>
 #include <time.h>
 #include <omp.h>
-#include <string.h>
 
 // While I dislike using global varibales it makes sense for pi, I try not to use MP_PI as a refrence for pi as it is not defined in standard C.
 double pi = 3.141592653589793;
 
+//// GENERATE MAPPED RANDOMN NUMBER AND GENERATE LOOKUP TABLE HELPER FUNCTIONS ////
+
 /**
- * Get a random number within a range
+ * Get a random number within a range.
+ *
  * @param random_parameters The parameters that are used for the Linear congreguntion function.
  * @param lower_bound Lower bound of the desired random number range.
  * @param upper_bound Upper bound of the desired random number range.
@@ -36,6 +38,7 @@ double random_number_with_mapping(int64_t *random_parameters, double lower_bound
 
 /**
  * Generate a lookup array based on a given function (or 3!)
+ *
  * @param params an array consisting of Table size, start value, finish value
  * @param filename Name of the file, Note: remeber to include .csv in the file name
  * @param compute_value1 Compute the corrosponding value for the 2nd column
@@ -46,12 +49,12 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
                               double (*compute_value2)(double, double),
                               double (*compute_value3)(double, double))
 {
-    // Extract the parameters from the array
+    // Extract the parameters from the array.
     int32_t length_of_array = params[0];
     double initial_value = (double)params[1];
     double final_value = (double)params[2];
 
-    // Open the file in read mode to load a previously saved table
+    // Open in read mode to try load a previously saved table, if it is present.
     FILE *lookup_file = fopen(filename, "r");
 
     double increment = (final_value - initial_value) / ((double)length_of_array - 1.0);
@@ -61,12 +64,12 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
 
     double *lookup_array = (double *)malloc(length_of_array * columns * sizeof(double));
 
-    // If file already
+    // If file already present read from it.
     if (lookup_file != NULL)
     {
         for (int32_t i = 0; i < length_of_array; i++)
         {
-            // Read the csv diffiently depending on the amount of columns
+            // Read the csv diffiently depending on the amount of columns.
             int count = (columns == 2) ? fscanf(lookup_file, "%lf,%lf",
                                                 &lookup_array[i * columns],
                                                 &lookup_array[i * columns + 1])
@@ -92,14 +95,15 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         return lookup_array;
     }
 
-    // No file already present, time to make one.
+    // No file present ( or issues with current), make a new one.
     lookup_file = fopen(filename, "w");
 
-    // First iteration handle seperately, As I am treating this as an intial value problem?
+    // First iteration handle seperately,
     lookup_array[0] = initial_value;
     lookup_array[1] = compute_value1(lookup_array[0]);
 
-    // Probably should make this work for N columns and pass in an array containing pointers to functions, but got to call it quits somewhere
+    // TODO Probably should make this work for N columns and pass in an array containing pointers to functions.
+    // Print to the file the first iteration.
     if (columns == 4)
     {
         lookup_array[2] = compute_value2(lookup_array[0], lookup_array[1]);
@@ -111,38 +115,40 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         fprintf(lookup_file, "%lf,%lf\n", lookup_array[0], lookup_array[1]);
     }
 
-    // printf("Lookup table saved to %s...\n", filename);
+    // Generate values and print out the rest of the array.
     for (int32_t i = 1; i < length_of_array; i++)
     {
-        // Generate the value for the first column
+        // Generate the value for the first column.
         lookup_array[i * columns] = lookup_array[(i - 1) * columns] + increment;
-        // Compute the corresponding y value using the first function
+        // Compute the corresponding y value using the first function.
         lookup_array[i * columns + 1] = compute_value1(lookup_array[i * columns]);
 
-        // If a second function is provided, compute the corresponding value in the third and fourth column
         if (columns == 4)
         {
+            // If a second function is provided, compute the corresponding value in the third and fourth column usisng the provided function then print to file
             lookup_array[i * columns + 2] = compute_value2(lookup_array[i * columns], lookup_array[i * columns + 1]);
             lookup_array[i * columns + 3] = compute_value3(lookup_array[i * columns], lookup_array[i * columns + 1]);
             fprintf(lookup_file, "%lf,%lf,%lf,%lf\n", lookup_array[i * columns], lookup_array[i * columns + 1], lookup_array[i * columns + 2], lookup_array[i * columns + 3]);
         }
         else
         {
-            // if not then just working with one column and one function.
+            // Otherwise just print to file.
             fprintf(lookup_file, "%lf,%lf\n", lookup_array[i * columns], lookup_array[i * columns + 1]);
         }
     }
 
-    // typically if each question was isolated I would have this printed, but with the amount of lookup tables it didn't seem practical
+    // typically if each question was isolated I would have this printed, but with the amount of lookup tables throughout this programme it didn't seem practical.
     // printf("Done generating lookup table, saved to %s\n", filename);
     fclose(lookup_file);
 
     return lookup_array;
 }
 
-//// LIST OF FUNCTIONS THAT WILL BE PASSED INTO LOOKUP TABLE ////
+//// FUNCTIONS THAT WILL BE PASSED INTO LOOKUP TABLE ////
 
-// The inverse culumitive distribution function for y
+/**
+ * The inverse culumitive distribution function for y
+ */
 double calculate_y_from_mu(double mu)
 {
     return (pow(mu, 3) + 3 * mu + 4) * 0.125;
@@ -159,10 +165,7 @@ double calculate_z_from_u(double u)
 }
 
 /**
- * Compute y using a deterministic azimuthal angle
- * @param u A value in range [-1, 1]
- * @param z The calculated z-coordinate
- * @return y-coordinate on the sphere
+ * Compute y from u and z
  */
 double calculate_y_from_u_and_z(double u, double z)
 {
@@ -172,10 +175,7 @@ double calculate_y_from_u_and_z(double u, double z)
 }
 
 /**
- * Compute x using a deterministic azimuthal angle
- * @param u A value in range [-1, 1]
- * @param z The calculated z-coordinate
- * @return x-coordinate on the sphere
+ * Compute x from z and u
  */
 double calculate_x_from_u_and_z(double u, double z)
 {
@@ -184,13 +184,7 @@ double calculate_x_from_u_and_z(double u, double z)
     return r * cos(phi);
 }
 
-// not needed anymore see report!
-// double calculate_b_from_c(double c)
-// {
-//     return (4 - pow(c, 3) - 3 * c) * 0.125;
-// }
-
-//// LIST OF THE DIFFERENT BINARY SEARCHES USED ////
+//// THE DIFFERENT BINARY SEARCHES USED ////
 
 void binary_search_2_columns(double y, const double *lookup_table, int32_t size_of_table, double *mu)
 {
@@ -237,11 +231,13 @@ void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_tab
     *dy = (lookup_table[4 * low + 2] + lookup_table[4 * high + 2]) * 0.5;
     *dx = (lookup_table[4 * low + 3] + lookup_table[4 * high + 3]) * 0.5;
 }
+
+/**
+ * As z varies from -1 to 1 we need to make modifications to the binary search
+ */
 void binary_search_b(double b, double *lookup_table, int32_t size_of_table, double *dy, double *dx)
 {
-    int32_t low, high, mid, ascending;
-
-    // printf("b %lf \n", b);
+    int32_t low, high, mid;
 
     // Determine the search range and order based on the sign of b
     if (b >= 0)
@@ -249,17 +245,15 @@ void binary_search_b(double b, double *lookup_table, int32_t size_of_table, doub
         // Search the upper half of the table (positive b) in ascending order
         low = size_of_table / 2 + 1;
         high = size_of_table - 1;
-        ascending = 0;
     }
     else
     {
         // Search the lower half of the table (negative b) in descending order
         low = 0;
         high = size_of_table / 2 - 1;
-        ascending = 1;
     }
 
-    // Binary search depending on where b is
+    // Binary search depending on where b is.
     while (low <= high)
     {
         mid = low + (high - low) / 2;
@@ -270,9 +264,6 @@ void binary_search_b(double b, double *lookup_table, int32_t size_of_table, doub
         else
             high = mid - 1;
     }
-
-    // printf("index of low = %d \n", low);
-    // printf(" the new y = %lf \n", lookup_table[4 * low + 2]);
 
     // Update dy and dx based on the closest match
     *dy = (lookup_table[4 * low + 2] + lookup_table[4 * high + 2]) * 0.5;
@@ -399,7 +390,7 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters, const
 /**
  * Generate the expected probablity distribution of mu and save it as bins
  */
-void save_expected_density_bins()
+void generate_expected_density_bins_for_plot_for_report()
 {
     const int num_bins = 100;
     const double min_mu = -1.0;
@@ -413,6 +404,8 @@ void save_expected_density_bins()
         return;
     }
 
+    // not sure if its counts as the Python plotting programme having to deal with the column names as a pitfall of the C programme so decided not to include them.
+    // All the plotting programmes do is plot
     // fprintf(file, "bin_start,bin_end,expected_density\n");
 
     for (int i = 0; i < num_bins; i++)
@@ -427,7 +420,10 @@ void save_expected_density_bins()
 
     fclose(file);
 }
-// Function to find bin index based on theta
+
+/**
+ *   Function to find bin index based on theta between the scattered photon and the origin
+ */
 int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of_bins)
 {
     for (int32_t i = 0; i < number_of_bins; i++)
@@ -439,16 +435,21 @@ int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of
     }
 }
 
-// Function to normalise a 3D vector
+/**
+ * Normalise a vector.
+ */
 void normalise(double v[3])
 {
+    // Done this way to reduce floating point division.
     double inverse_magnitude = 1 / sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
     v[0] *= inverse_magnitude;
     v[1] *= inverse_magnitude;
     v[2] *= inverse_magnitude;
 }
 
-// Function to multiply a vector by a scalar
+/**
+ * Multiple each of the values of a vector by a scalar.
+ */
 void multiply_vector(double v[3], double x)
 {
     v[0] *= x;
@@ -456,13 +457,21 @@ void multiply_vector(double v[3], double x)
     v[2] *= x;
 }
 
-// Compute the dot product of two 3D vectors
+/**
+ * Compute the dot product of two vectors
+ */
 double dot_product(double v1[3], double v2[3])
 {
     return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
 }
 
-// Compute the cross product of two 3D vectors (result stored in result vector)
+/**
+ * Compute the cross product of two 3D vectors (result stored in result vector)
+ *
+ * @param v1 Vector 1.
+ * @param v2 Vector 2.
+ * @param result The vector resulting as a cross product between vector 1 and 2.
+ */
 void cross_product(double v1[3], double v2[3], double result[3])
 {
     result[0] = v1[1] * v2[2] - v1[2] * v2[1];
@@ -470,8 +479,14 @@ void cross_product(double v1[3], double v2[3], double result[3])
     result[2] = v1[0] * v2[1] - v1[1] * v2[0];
 }
 
-// Rotate a vector around an axis by a given angle using Rodrigues' rotation formula
-void rotate_vector(double *v, const double axis[3], double angle)
+/**
+ * Rotate a vector around an axis by a given angle using Rodrigues' rotation formula.
+ *
+ * @param v A vector to be rotated.
+ * @param axis The axis on which to rotate the vector around.
+ * @param angle The angle between the current position of the vector and the new desired positon.
+ */
+void rotate_vector(double *v, double axis[3], double angle)
 {
     // Normalise the rotation axis vector, slightly different in functionality to the normalise function hence its not used here.
     double norm = sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
@@ -504,8 +519,10 @@ void rotate_vector(double *v, const double axis[3], double angle)
     v[2] = new_v2;
 }
 
-// Does the photon scatter or not
-int32_t photon_scatters(double absorption_probability, int64_t *random_parameters)
+/**
+ * Does the photon scatter or not
+ */
+int32_t does_photon_scatter(double absorption_probability, int64_t *random_parameters)
 {
     double scatter = random_number_with_mapping(random_parameters, 0, 1);
 
@@ -516,6 +533,17 @@ int32_t photon_scatters(double absorption_probability, int64_t *random_parameter
         return 0;
 }
 
+/**
+ * Function to handle question 2 and 3 of the report
+ *
+ * @param total_photon_count The total amount of photons to simmulate.
+ * @param random_parameters A pointer to the inital parameters of the random number generator.
+ * @param do_rayleigh_scattering A toggle to simulate rayleigh scattering or not, 0 to not 1 to do.
+ * @param mean_free_path The mean free path of an photon.
+ * @param absorption_probability The probability that a photon will be absorbed.
+ * @param binned_angle_file_name The name of the file to save the distribution of the resulting angles.
+ * @param binned_position_file_name The name of the file to save the distribution of the resulting positions.
+ */
 void photon_scattering(int32_t total_photon_count,
                        int64_t *random_parameters,
                        int do_rayleigh_scattering,
@@ -524,23 +552,26 @@ void photon_scattering(int32_t total_photon_count,
                        const char *binned_angle_file_name,
                        const char *binned_position_file_name)
 {
-    // Size of table, start value, final value
+    // Declare some inital values.
     int32_t size_of_displacement_table = 50000, number_of_angle_bins = 10, number_of_position_bins = 4000;
+    // Size of table, start value, final value.
     int32_t lookup_table_params[3] = {size_of_displacement_table, 0, 1};
 
     double escape_z = 200;
+    // Generate the displacement lookup array
     double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *calculate_z_from_u, *calculate_y_from_u_and_z, *calculate_x_from_u_and_z);
 
     FILE *binned_angle_results, *binned_position_results;
     binned_angle_results = fopen(binned_angle_file_name, "w");
     binned_position_results = fopen(binned_position_file_name, "w");
 
-    // I should only do this if Rayleigh scattering, ah well.
+    // I should only do this if Rayleigh scattering, but some compilers does not like that a varibale could be refrenced that has not been delcared (even though it wont actually be accesed).
     int32_t size_of_scattering_table = 15000;
+    // Size of table, start value, final value.
     int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -1, 1};
     double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "rayleigh_scattering_lookup.csv", *calculate_y_from_mu, NULL, NULL);
 
-    // Note, whenever there is a possibility of a value being read later in the code, but it is not explicility set ( a non zero change it could be not defined) I will use calloc.
+    // Note, whenever there is a possibility of a value being read later in the code, but it is not explicility set ( a non zero chance it could be read while not being defined) I will use calloc to ensure the array is initialised with values of 0.
     // calloc is not needed when everything is being set immediately.
 
     // Angle-based binning.
@@ -556,7 +587,7 @@ void photon_scattering(int32_t total_photon_count,
     int32_t *z_bin_counts = calloc(number_of_position_bins, sizeof(int32_t));
     int32_t *q_bin_counts = calloc(number_of_position_bins, sizeof(int32_t));
 
-    // Set up the angle bins for equal solid angle
+    // Set up the angle bins for equal solid angle.
     for (int i = 0; i <= number_of_angle_bins; i++)
     {
         angle_bin_edges[i] = asin((double)i / number_of_angle_bins);
@@ -568,40 +599,44 @@ void photon_scattering(int32_t total_photon_count,
         angle_bin_midpoints[i] = 0.5 * (angle_bin_edges[i] + angle_bin_edges[i + 1]);
     }
 
-    // Set up the position bins and their edges
-    double position_bin_width = 1.0; // Each bin represents an int range
+    // Set up the position bins and their edges.
+    double position_bin_width = 1.0; // Each bin represents an int range.
     for (int32_t i = 0; i <= number_of_position_bins; i++)
     {
         position_bin_edges[i] = -2000 + i * position_bin_width;
     }
 
-    // Variable to accumulate total q
+    // Variable to accumulate total q (scattering events)
     int32_t total_q = 0;
 
 #pragma omp parallel for
     for (int32_t i = 0; i < total_photon_count; i++)
     {
+    // A tag for the goto statement to refrence.
     generate_photon:
-        // Initial values
+        // Initial values.
         double position[3] = {0, 0, 0};  // [x, y, z]
         double direction[3] = {0, 0, 0}; // [dx, dy, dz]
         double t = 0, u = 0, b = 0, theta = 0;
         int32_t q = 0;
         double b_vector[3] = {0, 0, 0};
 
-        // Start it towards the z direction if Rayleigh scattering, and also initialize 2 more vectors
+        // Start it towards the z direction if Rayleigh scattering.
         if (do_rayleigh_scattering == 1)
         {
+            // Calculate the distance travelled using a direct map.
             position[2] += -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
-            if (!photon_scatters(absorption_probability, random_parameters))
+
+            // If photon gets absorpbed continue to the next iteration without decreasing the increment.
+            if (!does_photon_scatter(absorption_probability, random_parameters))
                 continue;
         }
 
-        // Loop until photon escapes
+        // Loop until photon escapes.
         while (position[2] >= 0 && position[2] <= escape_z)
         {
-            // Calculate the distance travelled using a direct map
-            if (!photon_scatters(absorption_probability, random_parameters))
+            // If photon gets absorpbed continue to the next iteration without decreasing the increment.
+            if (!does_photon_scatter(absorption_probability, random_parameters))
                 continue;
 
             if (do_rayleigh_scattering == 1)
@@ -613,26 +648,27 @@ void photon_scattering(int32_t total_photon_count,
                 double b_vector[3] = {position[0], position[1], position[2]};
                 normalise(b_vector);
 
-                // Get the magnitude based on b (no need for cross product or angle calculation)
+                // Get the magnitude based on b (no need for cross product or angle calculation).
                 multiply_vector(b_vector, b);
 
-                // Set up the rotation axis (cross product with z-axis)
+                // Set up the rotation axis (cross product with z-axis).
                 double z_axis[3] = {0, 0, 1};
                 double rotation_axis[3] = {0, 0, 0};
                 cross_product(position, z_axis, rotation_axis);
                 normalise(rotation_axis);
 
-                // Update the direction vector (use the new displacement direction)
+                // Update the direction vector (use the new displacement direction).
                 binary_search_b(b, displacement_lookup_array, size_of_displacement_table, &direction[1], &direction[0]);
                 direction[2] = b;
 
-                // Rotate the direction vector
-                double heta = acos(dot_product(b_vector, z_axis));
+                // Rotate the direction vector.
+                double theta = acos(dot_product(b_vector, z_axis));
 
-                rotate_vector(direction, rotation_axis, heta);
+                rotate_vector(direction, rotation_axis, theta);
 
-                // Update the position based on the direction
+                // Calculate the distance travelled using a direct map.
                 t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
+                // Update the position based on the direction.
                 position[0] += direction[0] * t;
                 position[1] += direction[1] * t;
                 position[2] += direction[2] * t;
@@ -643,7 +679,7 @@ void photon_scattering(int32_t total_photon_count,
                 t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
                 u = random_number_with_mapping(random_parameters, 0, 1);
 
-                // Pass in the memory address of direction array to update dx, dy, dz
+                // Pass in the memory address of direction array to update dx, dy, dz.
                 binary_search_4_columns(u, displacement_lookup_array, size_of_displacement_table, &direction[2], &direction[1], &direction[0]);
 
                 position[2] += direction[2] * t;
@@ -654,10 +690,10 @@ void photon_scattering(int32_t total_photon_count,
         }
 
         if (position[2] < 0)
-            // While I could just decrement the index this is more thread safe
+            // While I could just decrement the index and use continue, this is more thread safe.
             goto generate_photon;
 
-// Add the q value to the total
+// Add the q value to the total (  q is total scattering events).
 #pragma omp atomic update
         total_q += q;
 
@@ -670,7 +706,7 @@ void photon_scattering(int32_t total_photon_count,
         theta = atan(position[1] / escape_z);
         int32_t angle_bin_index = find_bin_index(theta, angle_bin_edges, number_of_angle_bins);
 
-// Use atomic increment for angle bin counts
+// Use atomic to update the bin counts to ensure some thread safe stuff
 #pragma omp atomic update
         angle_bin_counts[angle_bin_index]++;
 
@@ -692,20 +728,23 @@ void photon_scattering(int32_t total_photon_count,
         }
     }
 
-    // Calculate and print the average q
+    // Calculate and print the average q.
     double average_q = (double)total_q / total_photon_count;
-    printf("Average scattering events: %lf\n", average_q);
+    printf("Average count of scattering events for an escaping photon: %lf\n", average_q);
 
+    // Print the angle based binning to a csv.
     for (int32_t i = 0; i < number_of_angle_bins; i++)
     {
+        // Calculate the intensity using the midpoint and mu = cos theta as requested by the coursework problem/
         angle_bin_intensity[i] = (double)angle_bin_counts[i] * cos(angle_bin_midpoints[i]) / (double)total_photon_count;
         fprintf(binned_angle_results, "%lf,%lf,%lf,%lf\n", angle_bin_midpoints[i], angle_bin_intensity[i], angle_bin_edges[i], angle_bin_edges[i + 1]);
     }
     fclose(binned_angle_results);
 
+    // Print the position based binning to a csv.
     for (int32_t i = 0; i < number_of_position_bins; i++)
     {
-        // Normalise by diving by total photon count.
+        // Normalise by diving by total photon count..
         double x_bin_normalised = (double)x_bin_counts[i] / (double)total_photon_count;
         double y_bin_normalised = (double)y_bin_counts[i] / (double)total_photon_count;
         double z_bin_normalised = (double)z_bin_counts[i] / (double)total_photon_count;
@@ -717,11 +756,11 @@ void photon_scattering(int32_t total_photon_count,
     }
     fclose(binned_position_results);
 
-    // Free dynamically allocated memory for lookup arrays
+    // Free the lookup arrays .
     free(displacement_lookup_array);
     free(scattering_lookup_array);
 
-    // Free memory allocated for binning arrays
+    // Free the memory allocated for  the binning arrays .
     free(angle_bin_counts);
     free(angle_bin_edges);
     free(angle_bin_midpoints);
@@ -732,16 +771,18 @@ void photon_scattering(int32_t total_photon_count,
     free(z_bin_counts);
     free(q_bin_counts);
 }
+
 // Time Macro as the code was getting a bit messy doing this at the start and end of every function.
-#define MEASURE_TIME(func, num_threads, ...) ({                                                              \
-    clock_t start = clock();                                                                                 \
-    func(__VA_ARGS__);                                                                                       \
-    clock_t end = clock();                                                                                   \
-    double thread_time = (double)(end - start) / CLOCKS_PER_SEC;                                             \
-    double total_time = thread_time / num_threads;                                                           \
-    printf("Total compute time for %s: %.6f seconds (%.6f seconds total compute time, %.0f threads used)\n", \
-           #func, total_time, thread_time, num_threads);                                                     \
-    thread_time;                                                                                             \
+// When only 1 thread is passed in thread will be printed instead of threads.
+#define MEASURE_TIME(func, num_threads, ...) ({                                                         \
+    clock_t start = clock();                                                                            \
+    func(__VA_ARGS__);                                                                                  \
+    clock_t end = clock();                                                                              \
+    double thread_time = (double)(end - start) / CLOCKS_PER_SEC;                                        \
+    double total_time = thread_time / num_threads;                                                      \
+    printf("Total compute time for %s: %.6f seconds (%.6f seconds total compute time, %.0f %s used)\n", \
+           #func, total_time, thread_time, num_threads, (num_threads == 1) ? "thread" : "threads");     \
+    thread_time;                                                                                        \
 })
 
 int main()
@@ -752,8 +793,9 @@ int main()
     // Question 1
     printf("\nQ1.\n");
     // The expected density for comparison later
-    int32_t number_of_random_samples = 5000000;
-    save_expected_density_bins();
+    generate_expected_density_bins_for_plot_for_report();
+
+    int32_t number_of_random_samples = 500000;
 
     double time_rejection = MEASURE_TIME(rejection_sampling, 1.0, number_of_random_samples, rand_parameters);
     double time_direct = MEASURE_TIME(direct_mapping, 1.0, number_of_random_samples, rand_parameters, "direct_mapping_binned_results_50000.csv");
@@ -777,7 +819,7 @@ int main()
 
     double thread_count = (double)omp_get_max_threads();
     int32_t total_photon_count = 1000000;
-    MEASURE_TIME(photon_scattering, thread_count, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon_bins.csv", "photon_position_bins.csv");
+    // MEASURE_TIME(photon_scattering, thread_count, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon_bins.csv", "photon_position_bins.csv");
 
     // Question 3
     printf("\nQ3.\n");
