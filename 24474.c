@@ -183,23 +183,29 @@ double calculate_x_from_u_and_z(double u, double z)
 }
 
 //// THE DIFFERENT BINARY SEARCHES USED ////
+// What a binary search does is it essentially halves the size of a table each time unti the value is found.
 
 void binary_search_2_columns(double y, const double *lookup_table, int32_t size_of_table, double *mu)
 {
-    // set boundaries at the extremes of the table.
+    // Set boundaries at the extremes of the table.
     int32_t low = 0, high = size_of_table - 1;
 
+    // Creiteria to stop search.
     while (low <= high)
     {
+        // Find the middle index
         int32_t mid = low + (high - low) / 2;
         double mid_y = lookup_table[2 * mid + 1];
 
+        // See if the middle index is less than y
         if (mid_y < y)
         {
+            // Remove the lower half of the table from the search.
             low = mid + 1;
         }
         else
         {
+            // Remove the upper half of the table from the search.
             high = mid - 1;
         }
     }
@@ -212,15 +218,20 @@ void binary_search_2_columns(double y, const double *lookup_table, int32_t size_
 // TODO: See comment above? maybe, not sure if its the most important thing in the world, and there is other piorities first.
 void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_table, double *dz, double *dy, double *dx)
 {
+    // Set boundaries at the extremes of the table.
     int32_t low = 0, high = size_of_table - 1;
+
+    // Creiteria to stop search.
     while (low <= high)
     {
         int32_t mid = low + (high - low) / 2;
         double mid_u = lookup_table[4 * mid];
 
         if (mid_u < u)
+            // Remove the lower half of the table from the search.
             low = mid + 1;
         else
+            // Remove the upper half of the table from the search.
             high = mid - 1;
     }
 
@@ -232,34 +243,26 @@ void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_tab
 
 /**
  * As z varies from -1 to 1 we need to make modifications to the binary search.
+ * first filter it in half of only postive or negative values, as not doing that gets strange index's due to the opposite ascending and descending nature.
+ *
+ *
  */
 void binary_search_b(double b, double *lookup_table, int32_t size_of_table, double *dy, double *dx)
 {
-    int32_t low, high, mid;
+    // Set boundaries at the extremes of the table.
+    int32_t low = 0, high = size_of_table - 1;
 
-    // Determine the search range and order based on the sign of b.
-    if (b >= 0)
-    {
-        // Search the upper half of the table (positive b) in ascending order.
-        low = size_of_table / 2 + 1;
-        high = size_of_table - 1;
-    }
-    else
-    {
-        // Search the lower half of the table (negative b) in descending order.
-        low = 0;
-        high = size_of_table / 2 - 1;
-    }
-
-    // Binary search depending on where b is.
+    // Creiteria to stop search.
     while (low <= high)
     {
-        mid = low + (high - low) / 2;
+        int32_t mid = low + (high - low) / 2;
         double mid_b = lookup_table[4 * mid + 1];
 
         if (mid_b < b)
+            // Remove the lower half of the table from the search.
             low = mid + 1;
         else
+            // Remove the upper half of the table from the search.
             high = mid - 1;
     }
 
