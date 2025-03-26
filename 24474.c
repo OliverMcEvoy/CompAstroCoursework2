@@ -165,7 +165,7 @@ double calculate_z_from_u(double u)
  */
 double calculate_y_from_u_and_z(double u, double z)
 {
-    double phi = 1500.0 * pi * u, r;
+    double phi = 1500.0 * pi * u;
     // Deal with z = 1 causing nans.
     double r = (z > 0.99999) ? 0.0 : sqrt(1.0 - z * z);
     return r * sin(phi);
@@ -176,9 +176,9 @@ double calculate_y_from_u_and_z(double u, double z)
  */
 double calculate_x_from_u_and_z(double u, double z)
 {
-    double phi = 1500.0 * pi * u, r;
+    double phi = 1500.0 * pi * u;
     // Deal with z = 1 causing nans.
-    double r = (z > 0.99999) ? 0.0 : sqrt(1.0 - z * z);
+    double r = (z > 0.99999) ? 0 : sqrt(1.0 - z * z);
     return r * cos(phi);
 }
 
