@@ -37,12 +37,12 @@ double random_number_with_mapping(int64_t *random_parameters, double lower_bound
 }
 
 /**
- * Generate a lookup array based on a given function (or 3!)
+ * Generate a lookup array based on a given function (or 3!).
  *
- * @param params an array consisting of Table size, start value, finish value
- * @param filename Name of the file, Note: remeber to include .csv in the file name
- * @param compute_value1 Compute the corrosponding value for the 2nd column
- * @param compute_value2 Compute the corrosponding value for the 3rd column, Set to NULL if not needed
+ * @param params an array consisting of Table size, start value, finish value.
+ * @param filename Name of the file, Note: remeber to include .csv in the file name.
+ * @param compute_value1 Compute the corrosponding value for the 2nd column.
+ * @param compute_value2 Compute the corrosponding value for the 3rd column, Set to NULL if not needed.
  */
 double *generate_lookup_array(int32_t params[3], const char *filename,
                               double (*compute_value1)(double),
@@ -90,7 +90,7 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
         }
         fclose(lookup_file);
 
-        // typically if each question was isolated I would have this printed, but with the amount of lookup tables it didn't seem practical
+        // typically if each question was isolated I would have this printed, but with the amount of lookup tables it didn't seem practical.
         // printf("Loading table %s\n", filename);
         return lookup_array;
     }
@@ -147,40 +147,38 @@ double *generate_lookup_array(int32_t params[3], const char *filename,
 //// FUNCTIONS THAT WILL BE PASSED INTO LOOKUP TABLE ////
 
 /**
- * The inverse culumitive distribution function for y
+ * The inverse culumitive distribution function for y.
  */
 double calculate_y_from_mu(double mu)
 {
     return (pow(mu, 3) + 3 * mu + 4) * 0.125;
 }
 
-// Get z from a ranom variable u, see report for derivation
+// Get z from a ranom variable u, see report for derivation.
 double calculate_z_from_u(double u)
 {
-    // // Deal with square root of 1.
-    // if (u > 0.99999)
-    //     return 1.0;
-    // return copysign(1.0 - sqrt(1.0 - u * u), u);
     return 2 * u - 1;
 }
 
 /**
- * Compute y from u and z
+ * Compute y from u and z.
  */
 double calculate_y_from_u_and_z(double u, double z)
 {
-    double phi = 1500.0 * pi * u;
-    double r = sqrt(1.0 - z * z);
+    double phi = 1500.0 * pi * u, r;
+    // Deal with z = 1 causing nans.
+    double r = (z > 0.99999) ? 0.0 : sqrt(1.0 - z * z);
     return r * sin(phi);
 }
 
 /**
- * Compute x from z and u
+ * Compute x from z and u.
  */
 double calculate_x_from_u_and_z(double u, double z)
 {
-    double phi = 1500.0 * pi * u;
-    double r = sqrt(1.0 - z * z);
+    double phi = 1500.0 * pi * u, r;
+    // Deal with z = 1 causing nans.
+    double r = (z > 0.99999) ? 0.0 : sqrt(1.0 - z * z);
     return r * cos(phi);
 }
 
@@ -188,7 +186,7 @@ double calculate_x_from_u_and_z(double u, double z)
 
 void binary_search_2_columns(double y, const double *lookup_table, int32_t size_of_table, double *mu)
 {
-    // set boundaries at the extremes of the table
+    // set boundaries at the extremes of the table.
     int32_t low = 0, high = size_of_table - 1;
 
     while (low <= high)
@@ -206,7 +204,7 @@ void binary_search_2_columns(double y, const double *lookup_table, int32_t size_
         }
     }
 
-    // Take the midpoint of the two closest mu values
+    // Take the midpoint of the two closest mu values.
     *mu = (lookup_table[2 * high] + lookup_table[2 * low]) * 0.5;
 }
 
@@ -214,7 +212,7 @@ void binary_search_2_columns(double y, const double *lookup_table, int32_t size_
 // TODO: See comment above? maybe, not sure if its the most important thing in the world, and there is other piorities first.
 void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_table, double *dz, double *dy, double *dx)
 {
-    int32_t low = 0, high = size_of_table;
+    int32_t low = 0, high = size_of_table - 1;
     while (low <= high)
     {
         int32_t mid = low + (high - low) / 2;
@@ -226,29 +224,29 @@ void binary_search_4_columns(double u, double *lookup_table, int32_t size_of_tab
             high = mid - 1;
     }
 
-    // update the memory addresses directly
+    // update the memory addresses directly.
     *dz = (lookup_table[4 * low + 1] + lookup_table[4 * high + 1]) * 0.5;
     *dy = (lookup_table[4 * low + 2] + lookup_table[4 * high + 2]) * 0.5;
     *dx = (lookup_table[4 * low + 3] + lookup_table[4 * high + 3]) * 0.5;
 }
 
 /**
- * As z varies from -1 to 1 we need to make modifications to the binary search
+ * As z varies from -1 to 1 we need to make modifications to the binary search.
  */
 void binary_search_b(double b, double *lookup_table, int32_t size_of_table, double *dy, double *dx)
 {
     int32_t low, high, mid;
 
-    // Determine the search range and order based on the sign of b
+    // Determine the search range and order based on the sign of b.
     if (b >= 0)
     {
-        // Search the upper half of the table (positive b) in ascending order
+        // Search the upper half of the table (positive b) in ascending order.
         low = size_of_table / 2 + 1;
         high = size_of_table - 1;
     }
     else
     {
-        // Search the lower half of the table (negative b) in descending order
+        // Search the lower half of the table (negative b) in descending order.
         low = 0;
         high = size_of_table / 2 - 1;
     }
@@ -277,7 +275,7 @@ void binary_search_b(double b, double *lookup_table, int32_t size_of_table, doub
  */
 double probability_of_mu(double mu)
 {
-    // Expressing 3/8 as 0.375 to avoid floating point division
+    // Expressing 3/8 as 0.375 to avoid floating point division.
     return 0.375 * (1 + pow(mu, 2));
 }
 /**
@@ -289,7 +287,7 @@ double probability_of_mu(double mu)
  */
 void rejection_sampling(int32_t num_samples, int64_t *random_parameters)
 {
-    // Create 100 bins for mu values between -1 and 1
+    // Create 100 bins for mu values between -1 and 1.
     int32_t num_bins = 100;
 
     // Calloc used as technically a non zero chance a value will not fall into a bin.
@@ -309,10 +307,10 @@ void rejection_sampling(int32_t num_samples, int64_t *random_parameters)
         double prob_mu = probability_of_mu(mu);
         double acceptance_threshold = random_number_with_mapping(random_parameters, 0, 1);
 
-        // logic if the mu is accepted
+        // logic if the mu is accepted.
         if (acceptance_threshold <= prob_mu)
         {
-            // Bin the accepted sample
+            // Bin the accepted sample.
             int32_t bin_index = (int32_t)((mu - min_mu) / bin_width);
 
             bins[bin_index]++;
@@ -320,13 +318,13 @@ void rejection_sampling(int32_t num_samples, int64_t *random_parameters)
         }
     }
 
-    // Write bin results to file
+    // Write bin results to file.
     for (int32_t i = 0; i < num_bins; i++)
     {
         double bin_start = min_mu + i * bin_width;
         double bin_end = bin_start + bin_width;
-        double normalized_value = (double)bins[i] / num_samples * (double)num_bins * 0.5;
-        fprintf(rejection_method_results, "%f,%f,%f\n", bin_start, bin_end, normalized_value);
+        double normalised_value = (double)bins[i] / num_samples * (double)num_bins * 0.5;
+        fprintf(rejection_method_results, "%f,%f,%f\n", bin_start, bin_end, normalised_value);
     }
 
     fclose(rejection_method_results);
@@ -334,7 +332,7 @@ void rejection_sampling(int32_t num_samples, int64_t *random_parameters)
 }
 
 /**
- * Generate a random distribtion via direct mapping
+ * Generate a random distribtion via direct mapping.
  *
  * @param number_of_samples This is the amount of samples taken.
  * @param random_parameters A pointer to the random parameters used for the random number generator.
@@ -347,7 +345,7 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters, const
 
     // Create 100 bins for mu values between -1 and 1.
     int32_t num_bins = 100;
-    // Theres 'technically' no gaurentee each bin will get filled. esp if a low number of samples are used, so Ill use calloc
+    // Theres 'technically' no gaurentee each bin will get filled. esp if a low number of samples are used, so Ill use calloc.
     int32_t *bins = calloc(num_bins, sizeof(int32_t));
 
     // Constants for binning.
@@ -377,9 +375,9 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters, const
     {
         double bin_start = min_mu + i * bin_width;
         double bin_end = min_mu + (i + 1) * bin_width;
-        double normalized_value = (double)bins[i] / number_of_samples * (double)num_bins * 0.5;
+        double normalised_value = (double)bins[i] / number_of_samples * (double)num_bins * 0.5;
 
-        fprintf(efficient_results, "%f,%f,%f\n", bin_start, bin_end, normalized_value);
+        fprintf(efficient_results, "%f,%f,%f\n", bin_start, bin_end, normalised_value);
     }
 
     fclose(efficient_results);
@@ -388,7 +386,7 @@ void direct_mapping(int32_t number_of_samples, int64_t *random_parameters, const
 }
 
 /**
- * Generate the expected probablity distribution of mu and save it as bins
+ * Generate the expected probablity distribution of mu and save it as bins.
  */
 void generate_expected_density_bins_for_plot_for_report()
 {
@@ -404,8 +402,8 @@ void generate_expected_density_bins_for_plot_for_report()
         return;
     }
 
-    // not sure if its counts as the Python plotting programme having to deal with the column names as a pitfall of the C programme so decided not to include them.
-    // All the plotting programmes do is plot
+    // Not sure if its counts as the Python plotting programme having to deal with the column names as a pitfall of the C programme so decided not to include them.
+    // All the plotting programmes do is plot.
     // fprintf(file, "bin_start,bin_end,expected_density\n");
 
     for (int i = 0; i < num_bins; i++)
@@ -422,7 +420,11 @@ void generate_expected_density_bins_for_plot_for_report()
 }
 
 /**
- *   Function to find bin index based on theta between the scattered photon and the origin
+ *   Function to find bin index based on theta between the scattered photon and the origin.
+ *
+ *  @param theta_origin Angle between the y value and the z axis.
+ *  @param bin_edges where each bin ends and starts.
+ *  @param number_of_bins How many total bins is there.
  */
 int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of_bins)
 {
@@ -437,8 +439,10 @@ int32_t find_bin_index(double theta_origin, double *bin_edges, int32_t number_of
 
 /**
  * Normalise a vector.
+ *
+ * @param v vector
  */
-void normalise(double v[3])
+void normalise_vector(double *v)
 {
     // Done this way to reduce floating point division.
     double inverse_magnitude = 1 / sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
@@ -449,8 +453,11 @@ void normalise(double v[3])
 
 /**
  * Multiple each of the values of a vector by a scalar.
+ *
+ * @param v Vector.
+ * @param x Scalar.
  */
-void multiply_vector(double v[3], double x)
+void multiply_vector(double *v, double x)
 {
     v[0] *= x;
     v[1] *= x;
@@ -458,7 +465,10 @@ void multiply_vector(double v[3], double x)
 }
 
 /**
- * Compute the dot product of two vectors
+ * Compute the dot product of two vectors.
+ *
+ * @param v1 Vector 1.
+ * @param v2 Vector 2.
  */
 double dot_product(double v1[3], double v2[3])
 {
@@ -472,8 +482,12 @@ double dot_product(double v1[3], double v2[3])
  * @param v2 Vector 2.
  * @param result The vector resulting as a cross product between vector 1 and 2.
  */
-void cross_product(double v1[3], double v2[3], double result[3])
+void cross_product(double v1[3], double v2[3], double *result)
 {
+
+    // printf("cross product\n");
+    // printf("v vectors %lf,%lf,%lf\n", v1[0], v1[1], v1[2]);
+    // printf("v vectors %lf,%lf,%lf\n", v2[0], v2[1], v2[2]);
     result[0] = v1[1] * v2[2] - v1[2] * v2[1];
     result[1] = v1[2] * v2[0] - v1[0] * v2[2];
     result[2] = v1[0] * v2[1] - v1[1] * v2[0];
@@ -488,39 +502,29 @@ void cross_product(double v1[3], double v2[3], double result[3])
  */
 void rotate_vector(double *v, double axis[3], double angle)
 {
-    // Normalise the rotation axis vector, slightly different in functionality to the normalise function hence its not used here.
-    double norm = sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
-    if (norm == 0.0)
-        printf(" division by zero was about to occur tut tut tut ");
-    return; // Avoid division by zero
-    double x = axis[0] / norm;
-    double y = axis[1] / norm;
-    double z = axis[2] / norm;
+    normalise_vector(axis);
 
-    // Compute trigonometric values
+    // Compute values needed for the rotation formula.
     double cos_theta = cos(angle);
     double sin_theta = sin(angle);
     double one_minus_cos_theta = 1 - cos_theta;
+    double dot = dot_product(v, axis);
 
-    double dot = v[0] * x + v[1] * y + v[2] * z;
+    // Compute the cross product.
+    double cross[3];
+    cross_product(v, axis, cross);
 
-    double cross_x = y * v[2] - z * v[1];
-    double cross_y = z * v[0] - x * v[2];
-    double cross_z = x * v[1] - y * v[0];
-
-    //  Rodrigues' rotation formula
-    double new_v0 = v[0] * cos_theta + cross_x * sin_theta + x * dot * one_minus_cos_theta;
-    double new_v1 = v[1] * cos_theta + cross_y * sin_theta + y * dot * one_minus_cos_theta;
-    double new_v2 = v[2] * cos_theta + cross_z * sin_theta + z * dot * one_minus_cos_theta;
-
-    // Store the rotated values back into v
-    v[0] = new_v0;
-    v[1] = new_v1;
-    v[2] = new_v2;
+    // Apply Rodrigues' rotation formula onto the vector v
+    v[0] = v[0] * cos_theta + cross[0] * sin_theta + axis[0] * dot * one_minus_cos_theta;
+    v[1] = v[1] * cos_theta + cross[1] * sin_theta + axis[1] * dot * one_minus_cos_theta;
+    v[2] = v[2] * cos_theta + cross[2] * sin_theta + axis[2] * dot * one_minus_cos_theta;
 }
 
 /**
  * Does the photon scatter or not
+ *
+ * @param absorption_probability The chance the photon will absorb.
+ * @param random_parameters The random parameters for the random number generator.
  */
 int32_t does_photon_scatter(double absorption_probability, int64_t *random_parameters)
 {
@@ -534,7 +538,7 @@ int32_t does_photon_scatter(double absorption_probability, int64_t *random_param
 }
 
 /**
- * Function to handle question 2 and 3 of the report
+ * Function to handle question 2 and 3 of the report.
  *
  * @param total_photon_count The total amount of photons to simmulate.
  * @param random_parameters A pointer to the inital parameters of the random number generator.
@@ -553,22 +557,21 @@ void photon_scattering(int32_t total_photon_count,
                        const char *binned_position_file_name)
 {
     // Declare some inital values.
-    int32_t size_of_displacement_table = 50000, number_of_angle_bins = 10, number_of_position_bins = 4000;
+    double escape_z = 200;
+    int32_t size_of_displacement_table = 50000, size_of_scattering_table = 15000, number_of_angle_bins = 10, number_of_position_bins = 4000;
     // Size of table, start value, final value.
     int32_t lookup_table_params[3] = {size_of_displacement_table, 0, 1};
 
-    double escape_z = 200;
-    // Generate the displacement lookup array
+    // Generate the displacement lookup array.
     double *displacement_lookup_array = generate_lookup_array(lookup_table_params, "displacement_direction_lookup.csv", *calculate_z_from_u, *calculate_y_from_u_and_z, *calculate_x_from_u_and_z);
 
     FILE *binned_angle_results, *binned_position_results;
     binned_angle_results = fopen(binned_angle_file_name, "w");
     binned_position_results = fopen(binned_position_file_name, "w");
 
-    // I should only do this if Rayleigh scattering, but some compilers does not like that a varibale could be refrenced that has not been delcared (even though it wont actually be accesed).
-    int32_t size_of_scattering_table = 15000;
     // Size of table, start value, final value.
     int32_t scattering_lookup_table_params[3] = {size_of_scattering_table, -1, 1};
+    // I should only do this if Rayleigh scattering, but some compilers does not like that a varibale could be refrenced that has not been delcared (even though it wont actually be accesed).
     double *scattering_lookup_array = generate_lookup_array(scattering_lookup_table_params, "rayleigh_scattering_lookup.csv", *calculate_y_from_mu, NULL, NULL);
 
     // Note, whenever there is a possibility of a value being read later in the code, but it is not explicility set ( a non zero chance it could be read while not being defined) I will use calloc to ensure the array is initialised with values of 0.
@@ -600,14 +603,14 @@ void photon_scattering(int32_t total_photon_count,
     }
 
     // Set up the position bins and their edges.
-    double position_bin_width = 1.0; // Each bin represents an int range.
+    double position_bin_width = 1.0;
     for (int32_t i = 0; i <= number_of_position_bins; i++)
     {
         position_bin_edges[i] = -2000 + i * position_bin_width;
     }
 
-    // Variable to accumulate total q (scattering events)
-    int32_t total_q = 0;
+    // Variable to count total scattering events
+    int32_t total_scattering_events = 0;
 
 #pragma omp parallel for
     for (int32_t i = 0; i < total_photon_count; i++)
@@ -618,7 +621,7 @@ void photon_scattering(int32_t total_photon_count,
         double position[3] = {0, 0, 0};  // [x, y, z]
         double direction[3] = {0, 0, 0}; // [dx, dy, dz]
         double t = 0, u = 0, b = 0, theta = 0;
-        int32_t q = 0;
+        int32_t scattering_count = 0;
         double b_vector[3] = {0, 0, 0};
 
         // Start it towards the z direction if Rayleigh scattering.
@@ -631,6 +634,9 @@ void photon_scattering(int32_t total_photon_count,
             if (!does_photon_scatter(absorption_probability, random_parameters))
                 continue;
         }
+        else
+            // If its regular photon scattering as its isotropic we dont want to count the first random direction as a scattering event.
+            --scattering_count;
 
         // Loop until photon escapes.
         while (position[2] >= 0 && position[2] <= escape_z)
@@ -641,30 +647,33 @@ void photon_scattering(int32_t total_photon_count,
 
             if (do_rayleigh_scattering == 1)
             {
-                // Find what c is, this is the same as the new angle as c = cos (theta ^ hat)
+                // Find c, see report for more info on the mapping.
                 double c = random_number_with_mapping(random_parameters, 0, 1);
                 binary_search_2_columns(c, scattering_lookup_array, size_of_scattering_table, &b);
-                // Use the old position vector as the new direction vector
-                double b_vector[3] = {position[0], position[1], position[2]};
-                normalise(b_vector);
 
-                // Get the magnitude based on b (no need for cross product or angle calculation).
-                multiply_vector(b_vector, b);
-
-                // Set up the rotation axis (cross product with z-axis).
-                double z_axis[3] = {0, 0, 1};
+                // Set up the rotation axis, it is found by taking a cross product of the current photon position and the z_axis.
+                double z_axis[3] = {0.0, 0.0, 1.0};
                 double rotation_axis[3] = {0, 0, 0};
                 cross_product(position, z_axis, rotation_axis);
-                normalise(rotation_axis);
 
-                // Update the direction vector (use the new displacement direction).
                 binary_search_b(b, displacement_lookup_array, size_of_displacement_table, &direction[1], &direction[0]);
                 direction[2] = b;
 
-                // Rotate the direction vector.
-                double theta = acos(dot_product(b_vector, z_axis));
+                // Only rotate if rotation axis is non-zero vector, if it is zero, then it is already parallel and it is not needed to rotate.
+                if (rotation_axis[0] != 0 || rotation_axis[1] != 0 || rotation_axis[2] != 0)
+                {
 
-                rotate_vector(direction, rotation_axis, theta);
+                    // Calculate theta as the angle between z-axis and normalised position vector.
+                    double position_normalised[3] = {position[0], position[1], position[2]};
+                    normalise_vector(position_normalised);
+                    double theta = acos(dot_product(position_normalised, z_axis));
+                    normalise_vector(rotation_axis);
+
+                    // Update the direction vector using Rodrigues' rotation formula.
+                    rotate_vector(direction, rotation_axis, theta);
+                }
+                else if (scattering_count > 2)
+                    printf("this shouldnt happen");
 
                 // Calculate the distance travelled using a direct map.
                 t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
@@ -672,10 +681,13 @@ void photon_scattering(int32_t total_photon_count,
                 position[0] += direction[0] * t;
                 position[1] += direction[1] * t;
                 position[2] += direction[2] * t;
-                q++;
+                scattering_count++;
             }
             else
             {
+                // Not rayleigh scattering.
+
+                // Calculate the distance travelled using a direct map.
                 t = -log(random_number_with_mapping(random_parameters, 0, 1)) * mean_free_path;
                 u = random_number_with_mapping(random_parameters, 0, 1);
 
@@ -685,7 +697,7 @@ void photon_scattering(int32_t total_photon_count,
                 position[2] += direction[2] * t;
                 position[1] += direction[1] * t;
                 position[0] += direction[0] * t;
-                q++;
+                scattering_count++;
             }
         }
 
@@ -693,24 +705,24 @@ void photon_scattering(int32_t total_photon_count,
             // While I could just decrement the index and use continue, this is more thread safe.
             goto generate_photon;
 
-// Add the q value to the total (  q is total scattering events).
+// Add to the total scattering events
 #pragma omp atomic update
-        total_q += q;
+        total_scattering_events += scattering_count;
 
-        // int manipulation so division isn't too bad
+        // int manipulation so division isn't too bad.
         int32_t x_bin_index = (int32_t)(position[0] + 2000);
         int32_t y_bin_index = (int32_t)(position[1] + 2000);
         int32_t z_bin_index = (int32_t)(position[2] + 2000);
 
-        // Angle-based binning
-        theta = atan(position[1] / escape_z);
+        // Angle-based binning, fabs to take the modules as it is only the angle we are intrested in.
+        theta = atan(fabs(position[1] / escape_z));
         int32_t angle_bin_index = find_bin_index(theta, angle_bin_edges, number_of_angle_bins);
 
-// Use atomic to update the bin counts to ensure some thread safe stuff
+// Use atomic to update the bin counts to ensure some thread safe stuff.
 #pragma omp atomic update
         angle_bin_counts[angle_bin_index]++;
 
-        // Position-based binning using atomic increment
+        // Position-based binning using atomic increment.
         if (x_bin_index >= 0 && x_bin_index < number_of_position_bins)
         {
 #pragma omp atomic update
@@ -729,7 +741,7 @@ void photon_scattering(int32_t total_photon_count,
     }
 
     // Calculate and print the average q.
-    double average_q = (double)total_q / total_photon_count;
+    double average_q = (double)total_scattering_events / total_photon_count;
     printf("Average count of scattering events for an escaping photon: %lf\n", average_q);
 
     // Print the angle based binning to a csv.
@@ -756,15 +768,12 @@ void photon_scattering(int32_t total_photon_count,
     }
     fclose(binned_position_results);
 
-    // Free the lookup arrays .
+    // Free everything.
     free(displacement_lookup_array);
     free(scattering_lookup_array);
-
-    // Free the memory allocated for  the binning arrays .
     free(angle_bin_counts);
     free(angle_bin_edges);
     free(angle_bin_midpoints);
-    free(angle_bin_intensity);
     free(position_bin_edges);
     free(x_bin_counts);
     free(y_bin_counts);
@@ -792,8 +801,6 @@ int main()
 
     // Question 1
     printf("\nQ1.\n");
-    // The expected density for comparison later
-    generate_expected_density_bins_for_plot_for_report();
 
     int32_t number_of_random_samples = 500000;
 
@@ -809,19 +816,20 @@ int main()
         printf("direct_mapping was faster by %.6f seconds\n", time_rejection - time_direct);
     }
 
-    // For the nice graph
+    // For the nice graphs.
     direct_mapping(10000, rand_parameters, "direct_mapping_binned_results_10000.csv");
     direct_mapping(2500, rand_parameters, "direct_mapping_binned_results_2500.csv");
+    generate_expected_density_bins_for_plot_for_report();
 
     printf("\nQ2.\n");
 
-    // Question 2
+    // Question 2.
 
     double thread_count = (double)omp_get_max_threads();
     int32_t total_photon_count = 1000000;
-    // MEASURE_TIME(photon_scattering, thread_count, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon_bins.csv", "photon_position_bins.csv");
+    MEASURE_TIME(photon_scattering, thread_count, total_photon_count, rand_parameters, 0, 200 / 10, 0, "photon_bins.csv", "photon_position_bins.csv");
 
-    // Question 3
+    // Question 3.
     printf("\nQ3.\n");
     printf("Blue light\n");
     MEASURE_TIME(photon_scattering, thread_count, total_photon_count, rand_parameters, 1, 200 / 10, 0, "rayleigh_blue_bins.csv", "rayleigh_blue_position_bins.csv");

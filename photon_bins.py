@@ -33,7 +33,7 @@ fig.suptitle("Intensity as a Function of $\mu$ and $\\theta$", fontsize=18)
 for idx, (data, title) in enumerate(zip(dataframes, titles)):
     # Extract mu, intensity, and bin edges
     mu = data["mu"]
-    intensity = np.log(data["intensity"])
+    intensity = data["intensity"]
     bin_edge_lower = data["bin_edge_lower"]
     bin_edge_upper = data["bin_edge_upper"]
 
